@@ -1,0 +1,21 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/game/game.gd" id="1_game"]
+[ext_resource type="Script" path="res://scripts/game/ship_map.gd" id="2_map"]
+[ext_resource type="Script" path="res://scripts/game/fake_mission.gd" id="3_mission"]
+[ext_resource type="Script" path="res://scripts/game/hud.gd" id="4_hud"]
+
+[node name="Game" type="Node2D"]
+script = ExtResource("1_game")
+
+[node name="ShipMap" type="Node2D" parent="."]
+script = ExtResource("2_map")
+
+[node name="Crew" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="Mission" type="Node" parent="."]
+script = ExtResource("3_mission")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+script = ExtResource("4_hud")
