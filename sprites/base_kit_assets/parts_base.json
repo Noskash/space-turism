@@ -1,0 +1,615 @@
+{
+  "view": "top-down",
+  "units": "1x pixels",
+  "parts": [
+    {
+      "id": "solar_small",
+      "name": "Small solar panels",
+      "role": "engineer",
+      "mount": "wings",
+      "base_kit": true,
+      "icon": "icons/solar_small.png",
+      "mounted": "mounted/solar_small.png",
+      "mounted_size": [
+        30,
+        14
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "battery_small",
+      "name": "Small battery",
+      "role": "engineer",
+      "mount": "cell",
+      "base_kit": true,
+      "icon": "icons/battery_small.png",
+      "mounted": "mounted/battery_small.png",
+      "mounted_size": [
+        10,
+        8
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "computer_std",
+      "name": "Standard computer",
+      "role": "engineer",
+      "mount": "cell",
+      "base_kit": true,
+      "icon": "icons/computer_std.png",
+      "mounted": "mounted/computer_std.png",
+      "mounted_size": [
+        10,
+        8
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "antenna_low",
+      "name": "Low-gain antenna",
+      "role": "comms",
+      "mount": "top",
+      "base_kit": true,
+      "icon": "icons/antenna_low.png",
+      "mounted": "mounted/antenna_low.png",
+      "mounted_size": [
+        7,
+        12
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "tank_small",
+      "name": "Small propellant tank",
+      "role": "navigator",
+      "mount": "cell",
+      "base_kit": true,
+      "icon": "icons/tank_small.png",
+      "mounted": "mounted/tank_small.png",
+      "mounted_size": [
+        11,
+        11
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "engine_main",
+      "name": "Main engine",
+      "role": "navigator",
+      "mount": "bottom",
+      "base_kit": true,
+      "icon": "icons/engine_main.png",
+      "mounted": "mounted/engine_main.png",
+      "mounted_size": [
+        14,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "thrusters_basic",
+      "name": "Basic thrusters",
+      "role": "navigator",
+      "mount": "corners",
+      "base_kit": true,
+      "icon": "icons/thrusters_basic.png",
+      "mounted": "mounted/thrusters_basic.png",
+      "mounted_size": [
+        4,
+        4
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "weather_sensor",
+      "name": "Weather sensor",
+      "role": "scientist",
+      "mount": "cell",
+      "base_kit": true,
+      "icon": "icons/weather_sensor.png",
+      "mounted": "mounted/weather_sensor.png",
+      "mounted_size": [
+        9,
+        9
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    }
+  ],
+  "classes": [
+    {
+      "id": "light",
+      "upgrade_slots": 3,
+      "body": "bodies/light.png",
+      "body_size": [
+        40,
+        40
+      ],
+      "cell_size": 12,
+      "cells": [
+        {
+          "x": 14,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "tank_small"
+        },
+        {
+          "x": 14,
+          "y": 2,
+          "w": 12,
+          "h": 12,
+          "use": "battery_small"
+        },
+        {
+          "x": 2,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "computer_std"
+        },
+        {
+          "x": 26,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "weather_sensor"
+        },
+        {
+          "x": 14,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 2,
+          "y": 2,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 26,
+          "y": 2,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        }
+      ],
+      "preview": "previews/light_basekit.png",
+      "preview_size": [
+        160,
+        128
+      ],
+      "body_origin": {
+        "x": 60,
+        "y": 42
+      },
+      "mounts": {
+        "solar_small": [
+          {
+            "x": 30,
+            "y": 55,
+            "flip": true
+          },
+          {
+            "x": 100,
+            "y": 55,
+            "flip": false
+          }
+        ],
+        "antenna_low": [
+          {
+            "x": 77,
+            "y": 32
+          }
+        ],
+        "engine_main": [
+          {
+            "x": 73,
+            "y": 81
+          }
+        ],
+        "thrusters_basic": [
+          {
+            "x": 59,
+            "y": 41
+          },
+          {
+            "x": 97,
+            "y": 41
+          },
+          {
+            "x": 59,
+            "y": 79
+          },
+          {
+            "x": 97,
+            "y": 79
+          }
+        ],
+        "tank_small": [
+          {
+            "x": 74,
+            "y": 56
+          }
+        ],
+        "battery_small": [
+          {
+            "x": 75,
+            "y": 46
+          }
+        ],
+        "computer_std": [
+          {
+            "x": 63,
+            "y": 58
+          }
+        ],
+        "weather_sensor": [
+          {
+            "x": 87,
+            "y": 57
+          }
+        ]
+      }
+    },
+    {
+      "id": "balanced",
+      "upgrade_slots": 5,
+      "body": "bodies/balanced.png",
+      "body_size": [
+        52,
+        52
+      ],
+      "cell_size": 12,
+      "cells": [
+        {
+          "x": 14,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "tank_small"
+        },
+        {
+          "x": 26,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "battery_small"
+        },
+        {
+          "x": 14,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "computer_std"
+        },
+        {
+          "x": 26,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "weather_sensor"
+        },
+        {
+          "x": 14,
+          "y": 2,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 26,
+          "y": 2,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 2,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 38,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 2,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        }
+      ],
+      "preview": "previews/balanced_basekit.png",
+      "preview_size": [
+        160,
+        128
+      ],
+      "body_origin": {
+        "x": 54,
+        "y": 36
+      },
+      "mounts": {
+        "solar_small": [
+          {
+            "x": 24,
+            "y": 55,
+            "flip": true
+          },
+          {
+            "x": 106,
+            "y": 55,
+            "flip": false
+          }
+        ],
+        "antenna_low": [
+          {
+            "x": 77,
+            "y": 26
+          }
+        ],
+        "engine_main": [
+          {
+            "x": 73,
+            "y": 87
+          }
+        ],
+        "thrusters_basic": [
+          {
+            "x": 53,
+            "y": 35
+          },
+          {
+            "x": 103,
+            "y": 35
+          },
+          {
+            "x": 53,
+            "y": 85
+          },
+          {
+            "x": 103,
+            "y": 85
+          }
+        ],
+        "tank_small": [
+          {
+            "x": 68,
+            "y": 50
+          }
+        ],
+        "battery_small": [
+          {
+            "x": 81,
+            "y": 52
+          }
+        ],
+        "computer_std": [
+          {
+            "x": 69,
+            "y": 64
+          }
+        ],
+        "weather_sensor": [
+          {
+            "x": 81,
+            "y": 63
+          }
+        ]
+      }
+    },
+    {
+      "id": "heavy",
+      "upgrade_slots": 8,
+      "body": "bodies/heavy.png",
+      "body_size": [
+        64,
+        64
+      ],
+      "cell_size": 12,
+      "cells": [
+        {
+          "x": 26,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "tank_small"
+        },
+        {
+          "x": 26,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "battery_small"
+        },
+        {
+          "x": 14,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "computer_std"
+        },
+        {
+          "x": 38,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "weather_sensor"
+        },
+        {
+          "x": 26,
+          "y": 38,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 26,
+          "y": 2,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 14,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 38,
+          "y": 14,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 2,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 50,
+          "y": 26,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 14,
+          "y": 38,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        },
+        {
+          "x": 38,
+          "y": 38,
+          "w": 12,
+          "h": 12,
+          "use": "upgrade_slot"
+        }
+      ],
+      "preview": "previews/heavy_basekit.png",
+      "preview_size": [
+        160,
+        128
+      ],
+      "body_origin": {
+        "x": 48,
+        "y": 30
+      },
+      "mounts": {
+        "solar_small": [
+          {
+            "x": 18,
+            "y": 55,
+            "flip": true
+          },
+          {
+            "x": 112,
+            "y": 55,
+            "flip": false
+          }
+        ],
+        "antenna_low": [
+          {
+            "x": 77,
+            "y": 20
+          }
+        ],
+        "engine_main": [
+          {
+            "x": 73,
+            "y": 93
+          }
+        ],
+        "thrusters_basic": [
+          {
+            "x": 47,
+            "y": 29
+          },
+          {
+            "x": 109,
+            "y": 29
+          },
+          {
+            "x": 47,
+            "y": 91
+          },
+          {
+            "x": 109,
+            "y": 91
+          }
+        ],
+        "tank_small": [
+          {
+            "x": 74,
+            "y": 56
+          }
+        ],
+        "battery_small": [
+          {
+            "x": 75,
+            "y": 46
+          }
+        ],
+        "computer_std": [
+          {
+            "x": 63,
+            "y": 58
+          }
+        ],
+        "weather_sensor": [
+          {
+            "x": 87,
+            "y": 57
+          }
+        ]
+      }
+    }
+  ]
+}

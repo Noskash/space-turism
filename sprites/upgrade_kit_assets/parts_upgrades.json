@@ -1,0 +1,522 @@
+{
+  "view": "top-down",
+  "units": "1x pixels",
+  "rules": {
+    "slot_cost": "every upgrade uses 1 upgrade slot",
+    "external_mounts": "wings/top/boom parts mount outside the body; their slot shows frames/linked_<role>.png"
+  },
+  "parts": [
+    {
+      "id": "solar_large",
+      "name": "Large solar array",
+      "role": "engineer",
+      "mount": "wings",
+      "replaces": "solar_small",
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/solar_large.png",
+      "mounted": "mounted/solar_large.png",
+      "mounted_size": [
+        44,
+        18
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "rtg",
+      "name": "RTG (nuclear power)",
+      "role": "engineer",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/rtg.png",
+      "mounted": "mounted/rtg.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "battery_large",
+      "name": "Large battery",
+      "role": "engineer",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/battery_large.png",
+      "mounted": "mounted/battery_large.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "radiator",
+      "name": "Radiator / heater",
+      "role": "engineer",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/radiator.png",
+      "mounted": "mounted/radiator.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "computer_radhard",
+      "name": "Radiation-hardened computer",
+      "role": "engineer",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/computer_radhard.png",
+      "mounted": "mounted/computer_radhard.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "antenna_high",
+      "name": "High-gain dish",
+      "role": "comms",
+      "mount": "top",
+      "replaces": "antenna_low",
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/antenna_high.png",
+      "mounted": "mounted/antenna_high.png",
+      "mounted_size": [
+        17,
+        20
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "recorder_small",
+      "name": "Small data recorder",
+      "role": "comms",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/recorder_small.png",
+      "mounted": "mounted/recorder_small.png",
+      "mounted_size": [
+        8,
+        8
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "recorder_large",
+      "name": "Large data recorder",
+      "role": "comms",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/recorder_large.png",
+      "mounted": "mounted/recorder_large.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "relay_radio",
+      "name": "Relay radio",
+      "role": "comms",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/relay_radio.png",
+      "mounted": "mounted/relay_radio.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "tank_large",
+      "name": "Large propellant tank",
+      "role": "navigator",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/tank_large.png",
+      "mounted": "mounted/tank_large.png",
+      "mounted_size": [
+        12,
+        8
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "star_tracker",
+      "name": "Star tracker",
+      "role": "navigator",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/star_tracker.png",
+      "mounted": "mounted/star_tracker.png",
+      "mounted_size": [
+        9,
+        9
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "reaction_wheels",
+      "name": "Reaction wheels",
+      "role": "navigator",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/reaction_wheels.png",
+      "mounted": "mounted/reaction_wheels.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "camera_hires",
+      "name": "High-res camera",
+      "role": "scientist",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/camera_hires.png",
+      "mounted": "mounted/camera_hires.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "spectrometer",
+      "name": "Spectrometer",
+      "role": "scientist",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/spectrometer.png",
+      "mounted": "mounted/spectrometer.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "radar_sounder",
+      "name": "Radar sounder",
+      "role": "scientist",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/radar_sounder.png",
+      "mounted": "mounted/radar_sounder.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "thermal_imager",
+      "name": "Thermal imager",
+      "role": "scientist",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/thermal_imager.png",
+      "mounted": "mounted/thermal_imager.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "magnetometer",
+      "name": "Magnetometer",
+      "role": "scientist",
+      "mount": "boom",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/magnetometer.png",
+      "mounted": "mounted/magnetometer.png",
+      "mounted_size": [
+        18,
+        18
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    }
+  ],
+  "frames": {
+    "engineer": {
+      "slot": "frames/slot_engineer.png",
+      "linked": "frames/linked_engineer.png"
+    },
+    "comms": {
+      "slot": "frames/slot_comms.png",
+      "linked": "frames/linked_comms.png"
+    },
+    "navigator": {
+      "slot": "frames/slot_navigator.png",
+      "linked": "frames/linked_navigator.png"
+    },
+    "scientist": {
+      "slot": "frames/slot_scientist.png",
+      "linked": "frames/linked_scientist.png"
+    }
+  },
+  "example_loadouts": [
+    {
+      "class": "light",
+      "upgrades": [
+        "solar_large",
+        "camera_hires",
+        "recorder_small"
+      ],
+      "placements": [
+        {
+          "upgrade": "solar_large",
+          "slot": {
+            "x": 14,
+            "y": 26
+          }
+        },
+        {
+          "upgrade": "camera_hires",
+          "slot": {
+            "x": 2,
+            "y": 2
+          }
+        },
+        {
+          "upgrade": "recorder_small",
+          "slot": {
+            "x": 26,
+            "y": 2
+          }
+        }
+      ],
+      "file": "loadouts/light_example.png"
+    },
+    {
+      "class": "balanced",
+      "upgrades": [
+        "antenna_high",
+        "battery_large",
+        "spectrometer",
+        "star_tracker",
+        "recorder_large"
+      ],
+      "placements": [
+        {
+          "upgrade": "antenna_high",
+          "slot": {
+            "x": 14,
+            "y": 2
+          }
+        },
+        {
+          "upgrade": "battery_large",
+          "slot": {
+            "x": 26,
+            "y": 2
+          }
+        },
+        {
+          "upgrade": "spectrometer",
+          "slot": {
+            "x": 2,
+            "y": 14
+          }
+        },
+        {
+          "upgrade": "star_tracker",
+          "slot": {
+            "x": 38,
+            "y": 14
+          }
+        },
+        {
+          "upgrade": "recorder_large",
+          "slot": {
+            "x": 2,
+            "y": 26
+          }
+        }
+      ],
+      "file": "loadouts/balanced_example.png"
+    },
+    {
+      "class": "heavy",
+      "upgrades": [
+        "solar_large",
+        "antenna_high",
+        "rtg",
+        "radar_sounder",
+        "thermal_imager",
+        "magnetometer",
+        "tank_large",
+        "computer_radhard"
+      ],
+      "placements": [
+        {
+          "upgrade": "solar_large",
+          "slot": {
+            "x": 26,
+            "y": 38
+          }
+        },
+        {
+          "upgrade": "antenna_high",
+          "slot": {
+            "x": 26,
+            "y": 2
+          }
+        },
+        {
+          "upgrade": "rtg",
+          "slot": {
+            "x": 14,
+            "y": 14
+          }
+        },
+        {
+          "upgrade": "radar_sounder",
+          "slot": {
+            "x": 38,
+            "y": 14
+          }
+        },
+        {
+          "upgrade": "thermal_imager",
+          "slot": {
+            "x": 2,
+            "y": 26
+          }
+        },
+        {
+          "upgrade": "magnetometer",
+          "slot": {
+            "x": 50,
+            "y": 26
+          }
+        },
+        {
+          "upgrade": "tank_large",
+          "slot": {
+            "x": 14,
+            "y": 38
+          }
+        },
+        {
+          "upgrade": "computer_radhard",
+          "slot": {
+            "x": 38,
+            "y": 38
+          }
+        }
+      ],
+      "file": "loadouts/heavy_example.png"
+    }
+  ]
+}
