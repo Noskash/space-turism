@@ -13,6 +13,8 @@ const SCHEMES := {
 		"up": [KEY_W, KEY_UP],
 		"down": [KEY_S, KEY_DOWN],
 		"interact": [KEY_SPACE, KEY_E],
+		"run": [KEY_SHIFT],  # hold while walking
+		"skin": [KEY_K],  # cycle skins (until the character screen picks them)
 	},
 }
 

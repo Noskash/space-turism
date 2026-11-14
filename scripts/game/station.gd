@@ -1,7 +1,13 @@
 class_name Station
 extends Node2D
-## A console on the ship map. Built by ShipMap from ship_layout.json.
-## Crew standing within `radius` can use it; using it sends an action to the sim.
+## A console on the ship map, built by ShipMap from ship_layout.json.
+##
+## Crew dock here (CrewMember handles walking/docking) and then drive it with:
+##   control("left" / "right")  - the station's choices (burn, pick load)
+##   set_holding(true / false)  - USE held: works the pending ticket, else the station's
+##                                hold verb (Comms downlink, Engineer load toggle on tap)
+## The station reads the sim only through Events.state_changed and talks back only
+## through Events.action_requested.
 
 const ROLE_COLORS := {
 	"navigator": Color("4fd8ff"),
@@ -10,17 +16,29 @@ const ROLE_COLORS := {
 	"scientist": Color("b77bff"),
 	"team": Color("d8f4ff"),
 }
+const ALERT_COLOR := Color("ff4040")
+const FONT_SIZE := 8
 
 var role := ""
 var label_text := ""
 var radius := 14.0
-var alarm := false:
-	set(value):
-		alarm = value
-		queue_redraw()
 
 var _visitors: Array[Node] = []
+var _docked: Node = null
 var _time := 0.0
+
+# Latest sim state relevant to this station.
+var _state := {}
+var _ticket := {}        # oldest pending ticket for this role ({} = none)
+var _offline := false
+
+# Hold-to-work.
+var _holding := false
+var _work_id := -1       # ticket being worked, -1 = none
+var _progress := 0.0     # 0..1
+var _downlinking := false
+var _load_index := 0     # Engineer: selected load
+var _tick_left := 0.0    # time to the next work tick sound
 
 
 func setup(data: Dictionary) -> void:
@@ -31,6 +49,11 @@ func setup(data: Dictionary) -> void:
 	name = "Station_" + role
 
 
+func _ready() -> void:
+	z_index = 5  # bubbles and panels draw over the crew
+	Events.state_changed.connect(_on_state_changed)
+
+
 func color() -> Color:
 	return ROLE_COLORS.get(role, Color.WHITE)
 
@@ -39,42 +62,210 @@ func can_reach(point: Vector2) -> bool:
 	return point.distance_to(global_position) <= radius
 
 
+func has_alert() -> bool:
+	return _offline or not _ticket.is_empty()
+
+
+func work_progress() -> float:
+	return _progress if _work_id != -1 else 0.0
+
+
+# --- visitors / docking ---------------------------------------------------------------
+
 func add_visitor(who: Node) -> void:
 	if who not in _visitors:
 		_visitors.append(who)
-		queue_redraw()
 
 
 func remove_visitor(who: Node) -> void:
 	_visitors.erase(who)
-	queue_redraw()
 
 
-## Called by a crew member pressing interact while in range.
-func use(_by: Node) -> void:
-	Events.action_requested.emit(role, {type = "use_station", station = role})
-	_time = 0.0
+func is_free() -> bool:
+	return _docked == null
+
+
+func dock(who: Node) -> void:
+	_docked = who
+
+
+func undock(who: Node) -> void:
+	if _docked == who:
+		set_holding(false)
+		_docked = null
+
+
+# --- controls --------------------------------------------------------------------------
+
+func control(verb: String) -> void:
+	if _offline:
+		Sfx.play("denied")
+	match role:
+		"navigator":
+			_send({type = "burn", dir = verb})
+		"engineer":
+			var loads := _load_names()
+			if not loads.is_empty():
+				_load_index = wrapi(_load_index + (1 if verb == "right" else -1), 0, loads.size())
+				Sfx.play("select")
+
+
+func set_holding(on: bool) -> void:
+	if on == _holding:
+		return
+	_holding = on
+	if on:
+		if not _ticket.is_empty():
+			_work_id = int(_ticket.id)
+			_progress = 0.0
+			_tick_left = 0.0
+		elif _offline:
+			Sfx.play("denied")
+		elif role == "comms":
+			_downlinking = true
+			_send({type = "downlink", on = true})
+		elif role == "engineer":
+			var loads := _load_names()
+			if not loads.is_empty():
+				_send({type = "toggle_load", load = loads[_load_index]})
+				Sfx.play("toggle")
+	else:
+		_work_id = -1
+		_progress = 0.0
+		if _downlinking:
+			_downlinking = false
+			_send({type = "downlink", on = false})
 
 
 func _process(delta: float) -> void:
 	_time += delta
-	if alarm or not _visitors.is_empty():
-		queue_redraw()
+	if _work_id != -1:
+		if _ticket.is_empty() or int(_ticket.id) != _work_id:
+			_work_id = -1  # ticket expired or was replaced while we worked
+			_progress = 0.0
+		else:
+			_progress += delta / maxf(float(_ticket.work_time), 0.1)
+			_tick_left -= delta
+			if _tick_left <= 0.0:
+				_tick_left = 0.12
+				Sfx.play("work_tick", 0.8 + _progress * 0.8)  # rises as the ring fills
+			if _progress >= 1.0:
+				_send({type = "resolve", id = _work_id})
+				_work_id = -1  # needs a fresh press for the next ticket
+				_progress = 0.0
+	queue_redraw()
 
+
+func _send(action: Dictionary) -> void:
+	Events.action_requested.emit(role, action)
+
+
+func _on_state_changed(state: Dictionary) -> void:
+	_state = state
+	_offline = role in state.get("offline", [])
+	_ticket = {}
+	for event: Dictionary in state.get("events", []):
+		if event.role != role:
+			continue
+		# Repairs first: an offline station can do nothing else.
+		if _ticket.is_empty() or (event.repair and not _ticket.repair):
+			_ticket = event
+
+
+func _load_names() -> Array:
+	return _state.get("loads", {}).keys()
+
+
+# --- drawing ---------------------------------------------------------------------------
 
 func _draw() -> void:
 	var c := color()
-	if alarm:
-		# Blinking red ring while an event hits this station.
-		if fmod(_time, 0.5) < 0.25:
-			draw_arc(Vector2.ZERO, radius, 0, TAU, 24, Color("ff4040"), 1.0)
-	if _visitors.is_empty():
-		return
-	# Pulsing ring + label when someone can use it.
-	var pulse := 0.6 + 0.4 * sin(_time * 6.0)
-	draw_arc(Vector2.ZERO, radius, 0, TAU, 24, Color(c, pulse), 1.0)
+	if has_alert():
+		_draw_bubble()
+	if _docked and not _docked.get("remote"):
+		_draw_panel()
+		if _work_id != -1:
+			draw_arc(Vector2(0, -2), 9, -PI / 2, -PI / 2 + TAU * _progress, 24, c, 2.0)
+	elif _docked:
+		if not _visitors.is_empty():  # someone else is on it (co-op)
+			_text_centered(Vector2(0, -radius - 2), "IN USE", Color(c, 0.7))
+	elif not _visitors.is_empty():
+		var pulse := 0.6 + 0.4 * sin(_time * 6.0)
+		draw_arc(Vector2.ZERO, radius, 0, TAU, 24, Color(c, pulse), 1.0)
+		_text_centered(Vector2(0, -radius - 2), label_text, c)
+	elif _offline:
+		draw_arc(Vector2.ZERO, radius, 0, TAU, 24, Color(ALERT_COLOR, 0.6), 1.0)
+
+
+## "!" bubble above the station with a countdown ring (or a blinking OFFLINE wrench).
+func _draw_bubble() -> void:
+	var center := Vector2(0, -radius - 10)
+	var urgent: bool = _offline or (_ticket.time_left >= 0.0 and _ticket.time_left < 4.0)
+	var blink: bool = not urgent or fmod(_time, 0.4) < 0.25
+	var fill := ALERT_COLOR if _offline else color()
+	draw_circle(center, 6, Color(0, 0, 0, 0.75))
+	if blink:
+		draw_circle(center, 4, fill)
+	if not _offline and _ticket.time_left >= 0.0:
+		var left := clampf(_ticket.time_left / _ticket.duration, 0.0, 1.0)
+		draw_arc(center, 6, -PI / 2, -PI / 2 + TAU * left, 20, Color.WHITE, 1.0)
+	_text_centered(center + Vector2(0, 3), "X" if _offline else "!", Color.BLACK)
+
+
+## Small panel above the docked crew: what USE and ←/→ do right now.
+func _draw_panel() -> void:
+	var lines: Array[String] = []
+	if not _ticket.is_empty():
+		lines.append(_ticket.title.to_upper())
+		lines.append("HOLD SPACE: " + ("REPAIR" if _ticket.repair else "FIX"))
+	elif _offline:
+		lines.append("OFFLINE")
+	else:
+		match role:
+			"navigator":
+				lines.append("< BURN >")
+			"engineer":
+				var loads := _load_names()
+				if not loads.is_empty():
+					var load: String = loads[_load_index]
+					var on: bool = _state.loads[load]
+					lines.append("< %s: %s >" % [load.to_upper(), "ON" if on else "OFF"])
+					lines.append("SPACE: SWITCH")
+			"comms":
+				var dsn: Dictionary = _state.get("dsn", {})
+				if dsn.get("site", "") != "":
+					lines.append("DSN %s %ds" % [dsn.site, ceili(dsn.time_left)])
+					lines.append("HOLD SPACE: DOWNLINK")
+				else:
+					lines.append("NO DSN - NEXT %ds" % ceili(dsn.get("time_left", 0)))
+			"scientist":
+				lines.append("NO TARGET")
+			_:
+				lines.append(label_text)
+
 	var font := ThemeDB.fallback_font
-	var size := 8
-	var width := font.get_string_size(label_text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
-	draw_string(font, Vector2(-width / 2.0, -radius - 2), label_text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, size, c)
+	var width := 0.0
+	for line in lines:
+		width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x)
+	var line_h := 8.0
+	var box := Rect2(-width / 2.0 - 3, -radius - 6 - line_h * lines.size() - 2,
+			width + 6, line_h * lines.size() + 3)
+	if has_alert():
+		box.position.y -= 14  # keep the bubble visible
+	# Keep the panel on screen near the hull edges.
+	var screen_x := global_position.x + box.position.x
+	var shift := maxf(2.0 - screen_x, 0.0) - maxf(screen_x + box.size.x - 478.0, 0.0)
+	box.position.x += shift
+	draw_rect(box, Color(0, 0, 0, 0.8))
+	draw_rect(box, color(), false, 1.0)
+	for i in lines.size():
+		var hint := lines[i].begins_with("HOLD") or lines[i].begins_with("SPACE")
+		var col := Color("9aa4b8") if hint else Color.WHITE
+		_text_centered(Vector2(shift, box.position.y + 8 + line_h * i), lines[i], col)
+
+
+func _text_centered(pos: Vector2, text: String, col: Color) -> void:
+	var font := ThemeDB.fallback_font
+	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
+	draw_string(font, Vector2(roundf(pos.x - w / 2.0), roundf(pos.y)), text,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, col)
