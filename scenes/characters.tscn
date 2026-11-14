@@ -1,0 +1,238 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/characters_screen.gd" id="1_screen"]
+[ext_resource type="Theme" path="res://ui/space_theme.tres" id="2_theme"]
+[ext_resource type="Shader" path="res://shaders/space_background.gdshader" id="3_bg"]
+[ext_resource type="Script" path="res://scripts/character_data.gd" id="4_data"]
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_bg"]
+shader = ExtResource("3_bg")
+shader_parameter/nebula_color_a = Color(0.6, 0.15, 0.35, 1)
+shader_parameter/nebula_color_b = Color(0.15, 0.25, 0.7, 1)
+shader_parameter/planet_center = Vector2(0.08, 0.98)
+shader_parameter/planet_radius = 0.3
+shader_parameter/planet_color_a = Color(0.4, 0.12, 0.06, 1)
+shader_parameter/planet_color_b = Color(0.95, 0.62, 0.32, 1)
+shader_parameter/atmosphere_color = Color(1, 0.55, 0.3, 1)
+shader_parameter/warp = 0.0
+
+[sub_resource type="Resource" id="Resource_alex"]
+script = ExtResource("4_data")
+display_name = "Алекс Вега"
+role = "Пилот круизного шаттла"
+description = "Двадцать лет за штурвалом и ни одной царапины на обшивке. Знает каждый астероид на маршруте Земля — Луна и шутит так, что пассажиры забывают про перегрузки."
+accent_color = Color(0.35, 0.85, 1, 1)
+
+[sub_resource type="Resource" id="Resource_lira"]
+script = ExtResource("4_data")
+display_name = "Лира Нова"
+role = "Гид-астроном"
+description = "Рассказывает о звёздах так, будто лично с ними знакома. Проведёт экскурсию по кольцам Сатурна и подскажет лучший ракурс для фото на фоне туманности."
+accent_color = Color(0.75, 0.5, 1, 1)
+
+[sub_resource type="Resource" id="Resource_bip"]
+script = ExtResource("4_data")
+display_name = "БИП-7"
+role = "Бортовой робот-стюард"
+description = "Подаёт чай в невесомости, следит за запасом кислорода и очень переживает, когда пассажиры не пристёгнуты. Собирает открытки с каждой планеты."
+accent_color = Color(1, 0.65, 0.3, 1)
+
+[node name="Characters" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2_theme")
+script = ExtResource("1_screen")
+characters = Array[ExtResource("4_data")]([SubResource("Resource_alex"), SubResource("Resource_lira"), SubResource("Resource_bip")])
+
+[node name="Background" type="ColorRect" parent="."]
+material = SubResource("ShaderMaterial_bg")
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_override_constants/margin_left = 56
+theme_override_constants/margin_top = 40
+theme_override_constants/margin_right = 56
+theme_override_constants/margin_bottom = 28
+
+[node name="VBox" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 12
+
+[node name="Header" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="Title" type="Label" parent="Margin/VBox/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_type_variation = &"HeaderLabel"
+text = "О ПЕРСОНАЖАХ"
+
+[node name="BackButton" type="Button" parent="Margin/VBox/Header"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_override_font_sizes/font_size = 18
+text = "НАЗАД"
+
+[node name="Subtitle" type="Label" parent="Margin/VBox"]
+layout_mode = 2
+theme_type_variation = &"SubtitleLabel"
+text = "ПОЗНАКОМЬСЯ С ЭКИПАЖЕМ"
+
+[node name="Carousel" type="HBoxContainer" parent="Margin/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 2
+theme_override_constants/separation = 24
+alignment = 1
+
+[node name="PrevButton" type="Button" parent="Margin/VBox/Carousel"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"IconButton"
+text = "‹"
+
+[node name="Card" type="PanelContainer" parent="Margin/VBox/Carousel"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(780, 340)
+layout_mode = 2
+size_flags_vertical = 4
+
+[node name="Content" type="HBoxContainer" parent="Margin/VBox/Carousel/Card"]
+layout_mode = 2
+theme_override_constants/separation = 36
+
+[node name="Portrait" type="Panel" parent="Margin/VBox/Carousel/Card/Content"]
+unique_name_in_owner = true
+clip_children = 2
+custom_minimum_size = Vector2(220, 220)
+layout_mode = 2
+size_flags_vertical = 4
+mouse_filter = 2
+theme_type_variation = &"PortraitPanel"
+
+[node name="Initials" type="Label" parent="Margin/VBox/Carousel/Card/Content/Portrait"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_type_variation = &"PortraitInitials"
+text = "?"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Image" type="TextureRect" parent="Margin/VBox/Carousel/Card/Content/Portrait"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+expand_mode = 1
+stretch_mode = 6
+
+[node name="Ring" type="Panel" parent="Margin/VBox/Carousel/Card/Content/Portrait"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+theme_type_variation = &"PortraitRing"
+
+[node name="Info" type="VBoxContainer" parent="Margin/VBox/Carousel/Card/Content"]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Role" type="Label" parent="Margin/VBox/Carousel/Card/Content/Info"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"RoleLabel"
+text = "РОЛЬ"
+
+[node name="Name" type="Label" parent="Margin/VBox/Carousel/Card/Content/Info"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_type_variation = &"NameLabel"
+text = "Имя"
+
+[node name="AccentLine" type="ColorRect" parent="Margin/VBox/Carousel/Card/Content/Info"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(72, 3)
+layout_mode = 2
+size_flags_horizontal = 0
+mouse_filter = 2
+color = Color(0.35, 0.85, 1, 1)
+
+[node name="Description" type="Label" parent="Margin/VBox/Carousel/Card/Content/Info"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "Описание"
+autowrap_mode = 3
+
+[node name="NextButton" type="Button" parent="Margin/VBox/Carousel"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(64, 64)
+layout_mode = 2
+size_flags_vertical = 4
+focus_mode = 0
+theme_type_variation = &"IconButton"
+text = "›"
+
+[node name="Dots" type="HBoxContainer" parent="Margin/VBox"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+mouse_filter = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Hint" type="Label" parent="Margin/VBox"]
+layout_mode = 2
+theme_type_variation = &"HintLabel"
+text = "Стрелки — листать  ·  Esc — назад"
+horizontal_alignment = 1
+
+[node name="Fade" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+color = Color(0, 0, 0, 1)
