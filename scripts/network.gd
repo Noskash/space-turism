@@ -21,6 +21,11 @@ enum State { OFFLINE, HOSTING, CONNECTING, JOINED }
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 4
 const CONNECT_TIMEOUT := 8.0
+## Части названий виртуальных сетевых адаптеров.
+const VIRTUAL_ADAPTER_HINTS := ["virtualbox", "vmware", "vethernet", "hyper-v", "wsl", "docker",
+		"loopback", "bluetooth"]
+## Подсказка, если подключиться не выходит.
+const FIREWALL_HINT := "На компьютере с комнатой сеть должна быть «Частной», а игре — разрешён доступ в брандмауэре."
 
 ## На каком адресе сервер ждёт подключений. «*» — на всех сетевых картах.
 var bind_address := "*"
@@ -124,18 +129,23 @@ func set_room_open(open: bool) -> void:
 
 
 ## Локальные IPv4-адреса этого компьютера — их создатель называет друзьям.
-## Сначала идут адреса домашних сетей (192.168.*, 10.*).
+## Сначала адреса настоящих сетевых карт (Wi-Fi, Ethernet),
+## в конце — виртуальных (VirtualBox, WSL и т. п.): через них друзья не подключатся.
 func get_local_addresses() -> PackedStringArray:
-	var preferred := PackedStringArray()
-	var others := PackedStringArray()
-	for address in IP.get_local_addresses():
-		if address.count(".") != 3 or address.begins_with("127.") or address.begins_with("169.254."):
-			continue
-		if address.begins_with("192.168.") or address.begins_with("10."):
-			preferred.append(address)
-		else:
-			others.append(address)
-	return preferred + others
+	var real := PackedStringArray()
+	var virtual := PackedStringArray()
+	for adapter in IP.get_local_interfaces():
+		var adapter_name := (str(adapter.get("friendly", "")) + " " + str(adapter.get("name", ""))).to_lower()
+		var is_virtual := VIRTUAL_ADAPTER_HINTS.any(
+				func(hint: String) -> bool: return adapter_name.contains(hint))
+		for address: String in adapter.get("addresses", []):
+			if address.count(".") != 3 or address.begins_with("127.") or address.begins_with("169.254."):
+				continue
+			if is_virtual:
+				virtual.append(address)
+			else:
+				real.append(address)
+	return real + virtual
 
 
 ## Разбирает «адрес» или «адрес:порт». Возвращает [адрес, порт] или пустой массив.
@@ -188,13 +198,13 @@ func _on_connected_to_server() -> void:
 func _on_connection_failed() -> void:
 	if state == State.CONNECTING:
 		leave_room()
-		join_failed.emit("Не удалось подключиться. Проверь адрес и что комната создана.")
+		join_failed.emit("Не удалось подключиться. Проверь адрес. " + FIREWALL_HINT)
 
 
 func _on_connect_timeout() -> void:
 	if state == State.CONNECTING:
 		leave_room()
-		join_failed.emit("Комната не отвечает. Проверь адрес и что вы в одной сети.")
+		join_failed.emit("Комната не отвечает. Проверь адрес и что вы в одной сети. " + FIREWALL_HINT)
 
 
 func _on_server_disconnected() -> void:

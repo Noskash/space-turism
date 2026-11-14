@@ -52,7 +52,7 @@ func _ready() -> void:
 	_start_button.visible = host
 	if host:
 		_subtitle.text = "ДРУЗЬЯ ПОДКЛЮЧАЮТСЯ ПО АДРЕСУ НИЖЕ"
-		_status.text = "Можно лететь одному или дождаться друзей."
+		_status.text = "Друзья не могут войти? Сделай сеть «Частной» и разреши игре доступ в брандмауэре."
 		_show_addresses()
 	else:
 		_subtitle.text = "ТЫ В КОМНАТЕ"
