@@ -84,6 +84,8 @@ func _ready() -> void:
 	for arg in OS.get_cmdline_args() + OS.get_cmdline_user_args():
 		if arg.begins_with("--relay="):
 			relay_url = arg.trim_prefix("--relay=")
+	# In the console / browser log, so host and friend can compare builds without opening the lobby.
+	(func() -> void: print("Space Tourism build ", build_version())).call_deferred()
 
 
 func is_host() -> bool:
@@ -257,10 +259,13 @@ func build_version() -> String:
 		for path: String in RPC_SCRIPTS:
 			var s := load(path) as Script
 			var cfg: Dictionary = s.get_rpc_config() if s else {}
-			var names := cfg.keys()
-			names.sort()
-			for n in names:
-				parts.append("%s:%s:%s" % [path.get_file(), n, str(cfg[n])])
+			# As Strings: sorting StringNames compares their memory addresses, so the order (and the hash)
+			# changed between the Windows and web builds.
+			var lines: Array[String] = []
+			for k in cfg.keys():
+				lines.append("%s:%s:%s" % [path.get_file(), str(k), str(cfg[k])])
+			lines.sort()
+			parts.append_array(lines)
 		_version = "|".join(parts).md5_text().substr(0, 8)
 	return _version
 
