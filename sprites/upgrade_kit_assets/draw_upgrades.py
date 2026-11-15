@@ -103,6 +103,27 @@ def spr_computer_radhard():
     return s
 
 
+def spr_rad_shielding():
+    """Shielded avionics vault: thick tantalum-grey walls + shield-capacitor bank (cyan cells)."""
+    s = Canvas(10, 10)
+    s.rect(0, 0, 10, 10, "metalD"); s.frame(0, 0, 10, 10, "silverD"); s.frame(1, 1, 8, 8, "metal")
+    s.rect(2, 2, 6, 6, "ink")
+    for i in range(3):
+        s.rect(3 + i * 2, 3, 1, 3, "cyan" if i < 2 else "cyanD")
+    s.rect(3, 7, 4, 1, "yellow"); s.px(7, 7, "orange")
+    return s
+
+
+def spr_particle_monitor():
+    """Energetic particle detector: a stack of sensor discs looking sunward + a telescope tube."""
+    s = Canvas(9, 9)
+    s.rect(0, 0, 9, 9, "metalD"); s.rect(1, 1, 7, 7, "ink")
+    s.disc(4, 4, 2, "metal"); s.disc(4, 4, 1, "purpleD"); s.px(4, 4, "yellow")
+    s.rect(6, 1, 2, 3, "metalL"); s.px(7, 1, "purple")
+    s.px(1, 7, "purple"); s.px(2, 7, "purpleD")
+    return s
+
+
 def spr_recorder_small():
     s = Canvas(8, 8)
     s.rect(0, 0, 8, 8, "metalD"); s.rect(1, 1, 6, 6, "ink")
@@ -210,6 +231,7 @@ UPGRADES = [
     ("battery_large", "Large battery", "engineer", spr_battery_large, "cell", None),
     ("radiator", "Radiator / heater", "engineer", spr_radiator, "cell", None),
     ("computer_radhard", "Radiation-hardened computer", "engineer", spr_computer_radhard, "cell", None),
+    ("rad_shielding", "Radiation shielding", "engineer", spr_rad_shielding, "cell", None),
     ("antenna_high", "High-gain dish", "comms", spr_antenna_high, "top", "antenna_low"),
     ("recorder_small", "Small data recorder", "comms", spr_recorder_small, "cell", None),
     ("recorder_large", "Large data recorder", "comms", spr_recorder_large, "cell", None),
@@ -222,6 +244,7 @@ UPGRADES = [
     ("radar_sounder", "Radar sounder", "scientist", spr_radar_sounder, "cell", None),
     ("thermal_imager", "Thermal imager", "scientist", spr_thermal_imager, "cell", None),
     ("magnetometer", "Magnetometer", "scientist", spr_magnetometer, "boom", None),
+    ("particle_monitor", "Solar particle monitor", "scientist", spr_particle_monitor, "cell", None),
 ]
 BY_ID = {u[0]: u for u in UPGRADES}
 

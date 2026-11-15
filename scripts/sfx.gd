@@ -15,6 +15,7 @@ const POOL_SIZE := 10
 const VOLUME := {
 	"ui_hover": -10.0, "ui_click": -4.0, "step": -14.0, "work_tick": -8.0, "select": -6.0,
 	"toast": -10.0, "hum": -12.0, "downlink": -6.0, "burn": -3.0, "alarm": -5.0,
+	"engine": -14.0, "static": -12.0, "siren": -4.0, "lever": -6.0, "countdown": -4.0, "rocket": -2.0,
 }
 ## Hover sounds are ignored right after a scene builds its UI (menus grab focus on _ready).
 const HOVER_QUIET_MS := 200
@@ -35,6 +36,12 @@ func _ready() -> void:
 		add_child(player)
 		_pool.append(player)
 	get_tree().node_added.connect(_on_node_added)
+	# Saved volume (set in the ESC menu, PauseMenu): 0 = 100% ... 3 = off.
+	var cfg := ConfigFile.new()
+	cfg.load("user://settings.cfg")
+	var level := int(cfg.get_value("audio", "volume", 0))
+	AudioServer.set_bus_volume_db(0, [0.0, -6.0, -14.0, -80.0][clampi(level, 0, 3)])
+	AudioServer.set_bus_mute(0, level >= 3)
 
 
 func play(sound: String, pitch := 1.0, volume_db := 0.0) -> void:
@@ -69,6 +76,14 @@ func set_loop(sound: String, on: bool) -> void:
 	elif not on and player != null:
 		player.queue_free()
 		_loops.erase(sound)
+
+
+## Live volume (dB on top of the base) and pitch of a running loop, e.g. rocket roar vs throttle.
+func tune_loop(sound: String, volume_db: float, pitch := 1.0) -> void:
+	var player: AudioStreamPlayer = _loops.get(sound)
+	if player:
+		player.volume_db = VOLUME.get(sound, 0.0) + volume_db
+		player.pitch_scale = maxf(pitch, 0.05)
 
 
 func is_looping(sound: String) -> bool:

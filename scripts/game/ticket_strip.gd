@@ -19,7 +19,7 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
-	var font := ThemeDB.fallback_font
+	var font := UiFont.font()
 	var x := size.x
 	for event: Dictionary in events:
 		x -= CHIP.x

@@ -1,0 +1,489 @@
+class_name EventGuide
+extends CanvasLayer
+## Walkthroughs for every cruise event (radiation storm, comet debris, faults, science windows,
+## repairs, blackout, low battery, full storage).
+##
+## The first time an event happens:
+##   1. a short dialog (Tutorial panes, the sim is paused offline) says what it is in real life,
+##      who fixes it, how, and which parts help (the trade-off lesson);
+##   2. then a live checklist under the banner + a bouncing arrow over the right station walk the
+##      crew through it, ticking steps off from the sim state;
+##   3. when the event is over, a one-line outcome ("STORM BEATEN" / "SHIP DISABLED - ...").
+## Once per event (user://tutorial.cfg "seen/event_<id>"); nothing when tutorials are skipped.
+## Reads the sim only through Events.state_changed, so it works the same on every co-op peer.
+
+const ROOMS := {
+	"navigator": Rect2(336, 34, 108, 168), "engineer": Rect2(30, 138, 118, 112),
+	"comms": Rect2(30, 34, 118, 80), "scientist": Rect2(160, 34, 164, 80),
+	"team": Rect2(160, 138, 164, 112),
+}
+const PLACE := {
+	"navigator": "BRIDGE", "engineer": "ENGINE ROOM", "comms": "COMMS",
+	"scientist": "SCIENCE LAB", "team": "MISSION HUB TABLE",
+}
+const WHO := {
+	"navigator": "NAVIGATOR", "engineer": "ENGINEER", "comms": "COMMS",
+	"scientist": "SCIENTIST", "team": "ANYONE",
+}
+const BANNER := Rect2(40, 29, 400, 16)
+const TICKETS := Rect2(326, 4, 128, 18)
+## Space weather first: these interrupt a calmer walkthrough that is still running.
+const URGENT := ["storm_shields", "storm_safe", "debris", "blackout"]
+const ORDER := ["storm_shields", "storm_safe", "debris", "blackout", "solar_storm", "thruster_leak",
+		"antenna_glitch", "science_window", "repair", "low_power", "data_full"]
+const FAULTS := {
+	"solar_storm": "engineer", "thruster_leak": "navigator", "antenna_glitch": "comms",
+}
+const RESULT_TIME := 4.0
+
+var map: ShipMap
+var local: CrewMember          # the crew member this window controls (null = none)
+
+var _state := {}
+var _guide := {}               # running walkthrough (see _build)
+var _reached := 0              # steps ticked so far (never goes back, so the list doesn't flicker)
+var _dialog: Tutorial
+var _canvas: Node2D
+var _time := 0.0
+var _result := ""
+var _result_good := true
+var _result_left := 0.0
+
+
+func _ready() -> void:
+	layer = 12                 # over the HUD, under minigames (15) and dialogs (20)
+	_canvas = Node2D.new()
+	_canvas.draw.connect(_draw_guide)
+	add_child(_canvas)
+	Events.state_changed.connect(_on_state)
+
+
+func _on_state(state: Dictionary) -> void:
+	_state = state
+	if Tutorial.is_off() or (_dialog and _dialog.is_open()):
+		return
+	for id: String in ORDER:
+		if not _triggered(id) or Tutorial.was_seen("event_" + id):
+			continue
+		if _guide.get("id", "") == id:
+			break
+		var interrupt: bool = not _guide.is_empty() and id in URGENT and _guide.id not in URGENT
+		if (_guide.is_empty() or interrupt) and not Tutorial.is_blocking():
+			_start(id)
+		break
+
+
+# --- triggers ------------------------------------------------------------------------------
+
+func _triggered(id: String) -> bool:
+	var cme: Dictionary = _state.get("cme", {})
+	match id:
+		"storm_shields":
+			return cme.get("phase", "") == "warning" and cme.get("shielding", false) and not cme.get("shields", false)
+		"storm_safe":
+			return cme.get("phase", "") == "warning" and not cme.get("shielding", false) and not cme.get("safe", false)
+		"debris":
+			return _state.get("dust", {}).get("phase", "") in ["warning", "stream"]
+		"blackout":
+			return float(_state.get("blackout", 0.0)) > 0.0
+		"repair":
+			return not _state.get("offline", []).is_empty()
+		"low_power":
+			return float(_state.get("power", 100.0)) < 25.0 and float(_state.get("blackout", 0.0)) <= 0.0
+		"data_full":
+			return float(_state.get("data", 0.0)) > 85.0
+		_:
+			return not _ticket(id).is_empty()
+
+
+func _ticket(kind: String) -> Dictionary:
+	for e: Dictionary in _state.get("events", []):
+		if e.get("kind", "") == kind:
+			return e
+	return {}
+
+
+func _ticket_by_id(id: int) -> Dictionary:
+	for e: Dictionary in _state.get("events", []):
+		if int(e.id) == id:
+			return e
+	return {}
+
+
+# --- running a walkthrough -----------------------------------------------------------------
+
+func _start(id: String) -> void:
+	_guide = _build(id)
+	_guide.id = id
+	_guide.age = 0.0
+	_reached = 0
+	_result = ""
+	if _dialog:
+		_dialog.queue_free()
+	_dialog = Tutorial.new()
+	_dialog.screen_id = "event_" + id
+	_dialog.panes = _guide.panes
+	_dialog.hotkey = false     # H keeps reopening the cruise tutorial, not this one
+	_dialog.name = "EventTutorial"
+	add_child(_dialog)
+	_dialog.open()
+
+
+func _process(delta: float) -> void:
+	_time += delta
+	_result_left = maxf(_result_left - delta, 0.0)
+	if not _guide.is_empty() and not (_dialog and _dialog.is_open()):
+		_guide.age += delta
+		var steps: Array = _guide.steps
+		while _reached < steps.size() and (steps[_reached].done as Callable).call():
+			_reached += 1
+			if _reached < steps.size():
+				Sfx.play("select", 1.4)
+		if (_guide.over as Callable).call() or _guide.age > float(_guide.get("timeout", 60.0)):
+			var out: Array = (_guide.outcome as Callable).call()
+			_result = out[0]
+			_result_good = out[1]
+			_result_left = RESULT_TIME
+			Sfx.play("fixed" if _result_good else "denied", 1.2)
+			_guide = {}
+	_canvas.queue_redraw()
+
+
+# --- helpers for step checks ---------------------------------------------------------------
+
+func _station(role: String) -> Station:
+	return map.station_for_role(role) if map else null
+
+
+## The local player is at (in the ring of, or docked at) the station for `role`.
+func _at(role: String) -> bool:
+	if local == null:
+		return false
+	var s := local.near_station()
+	return s != null and s.role == role
+
+
+func _docked(role: String) -> bool:
+	return local != null and local.docked_station() != null and local.docked_station().role == role
+
+
+func _offline(role: String) -> bool:
+	return role in _state.get("offline", [])
+
+
+## "Go to" step text that switches to "repair it first" when that station is broken.
+func _go_text(role: String) -> String:
+	if _offline(role):
+		return "%s is OFFLINE: dock and HOLD SPACE to repair it first" % PLACE[role]
+	return "%s: go to the %s" % [WHO[role], PLACE[role]]
+
+
+func _step(text: Variant, role: String, done: Callable) -> Dictionary:
+	return {text = text, role = role, done = done}
+
+
+# --- the walkthroughs ------------------------------------------------------------------------
+# Each: title, panes (dialog), steps [{text (String or Callable), role (arrow target), done}],
+# over() -> bool, outcome() -> [text, good], optional timeout (s).
+
+func _build(id: String) -> Dictionary:
+	var s := _state
+	var cme: Dictionary = s.get("cme", {})
+	match id:
+		"storm_shields":
+			var charges := int(_ticket("shields").get("charges", 3))
+			return {
+				title = "RADIATION STORM",
+				panes = [
+					{title = "Radiation storm!", rect = BANNER,
+					 body = "The Sun just threw out a burst of fast particles (a solar particle event). The wave hits in %d s. Unprotected, it fries electronics: blackout and broken stations." % ceili(cme.get("time_left", 0))},
+					{title = "Raise the shield", rect = ROOMS.team,
+					 body = "Your ship has RADIATION SHIELDING. Anyone: run to the Mission Hub table and press SPACE. Then press SPACE while the needle is in the GREEN zone, %d times. Each charge makes it faster." % charges},
+					{title = "Parts that help",
+					 body = "Rad-hard computer: one fewer charge. Solar particle monitor: 7 s more warning. RTG: keeps power on even in a blackout. Real probes survive with shielding mass, rad-hard chips and safe mode (SIMPLIFIED)."},
+				],
+				steps = [
+					_step(_go_text.bind("team"), "team", func() -> bool: return _at("team") or _shield_open() or _shields()),
+					_step("Press SPACE at the table to open the shield panel", "team", func() -> bool: return _shield_open() or _shields()),
+					_step("SPACE when the needle is in the GREEN zone (x%d)" % charges, "", _shields),
+					_step("Shields up! Wait for the wave", "", func() -> bool: return false),
+				],
+				over = func() -> bool: return _state.get("cme", {}).get("phase", "") != "warning",
+				outcome = func() -> Array:
+					return ["STORM BEATEN - shields held, storm data recorded", true] if _shields() \
+						else ["SHIP DISABLED - raise the shield before the timer runs out", false],
+			}
+		"storm_safe":
+			return {
+				title = "RADIATION STORM",
+				panes = [
+					{title = "Radiation storm!", rect = BANNER,
+					 body = "The Sun just threw out a burst of fast particles (a solar particle event). The wave hits in %d s. Unprotected, it fries electronics: blackout and broken stations." % ceili(cme.get("time_left", 0))},
+					{title = "Safe mode", rect = ROOMS.engineer,
+					 body = "This ship has NO radiation shielding, so the only defence is to power down. ENGINEER: dock at the Engine Room console and press SPACE. Then cut the BLINKING breaker each time (A/D move, SPACE flip) - the order changes every storm."},
+					{title = "The trade-off",
+					 body = "Safe mode protects the ship, but instruments and transmitter stay off until the storm passes - science and downlink stop. Then switch them back on. Want to keep working through storms? Buy Radiation shielding (heavy) in design."},
+				],
+				steps = [
+					_step(_go_text.bind("engineer"), "engineer", func() -> bool: return _at("engineer") or _safe_open() or _safe()),
+					_step("Press SPACE at the console to open the breaker panel", "engineer", func() -> bool: return _safe_open() or _safe()),
+					_step("Cut the BLINKING breaker: A/D move, SPACE flip", "", _safe),
+					_step("Ship powered down. Wait for the wave", "", func() -> bool: return false),
+				],
+				over = func() -> bool: return _state.get("cme", {}).get("phase", "") != "warning",
+				outcome = func() -> Array:
+					return ["SAFE MODE HELD - switch loads back on after the storm", true] if _safe() \
+						else ["SHIP DISABLED - enter safe mode before the timer runs out", false],
+			}
+		"debris":
+			var start_hits := int(s.get("dust", {}).get("hits", 0))
+			var wheels: bool = s.get("dust", {}).get("wheels", false)
+			return {
+				title = "COMET DEBRIS",
+				panes = [
+					{title = "Comet debris!", rect = BANNER,
+					 body = "The ship is crossing the trail a comet left behind along its orbit. Real trails are mostly fine dust - here it comes in chunks (SIMPLIFIED). It arrives in %d s." % ceili(s.get("dust", {}).get("time_left", 0))},
+					{title = "Get to the Bridge", rect = ROOMS.navigator,
+					 body = "NAVIGATOR: dock at the Bridge console and STAY docked. When the debris arrives you fly the ship yourself, full screen. Nobody at the Bridge = the ship takes 3 hits."},
+					{title = "Flying",
+					 body = "A/D turn, W thrust, S brake. Fly off one edge and you come back on the other. Survive 6 seconds. Every hit breaks a station or punctures the tank, and thrusting costs fuel."},
+					{title = "Parts that help",
+					 body = "Reaction wheels: fast turning that costs no fuel%s. Star tracker: 4 s more warning, and red arrows show where rocks come from." % (" (you have them)" if wheels else "")},
+				],
+				steps = [
+					_step(_go_text.bind("navigator"), "navigator", func() -> bool: return _docked("navigator") or _dust_phase() == "flying"),
+					_step(func() -> String: return "Stay docked - debris in %ds" % ceili(_state.get("dust", {}).get("time_left", 0)) if _dust_phase() == "warning" else "Stay docked - here it comes!",
+						"navigator", func() -> bool: return _dust_phase() == "flying"),
+					_step("Fly! A/D turn - W thrust - S brake", "", func() -> bool: return false),
+				],
+				over = func() -> bool: return _dust_phase() == "",
+				outcome = func() -> Array:
+					var hits := int(_state.get("dust", {}).get("hits", 0)) - start_hits
+					if hits == 0:
+						return ["CLEAN RUN - no hits!", true]
+					return ["%d HIT%s - check the tickets for broken stations" % [hits, "" if hits == 1 else "S"], hits < 3],
+			}
+		"blackout":
+			return {
+				title = "BLACKOUT",
+				panes = [
+					{title = "Blackout", rect = BANNER,
+					 body = "The radiation tripped the solar power bus: everything is off and the battery is draining. Only an RTG (nuclear power) keeps making power through a blackout."},
+					{title = "Recover",
+					 body = "Wait for the bus to come back. Then the ENGINEER switches loads back on (A/D pick, SPACE switch), and broken stations get repaired: dock and HOLD SPACE."},
+				],
+				steps = [
+					_step(func() -> String: return "Wait for power (%ds)" % ceili(_state.get("blackout", 0)), "", func() -> bool: return float(_state.get("blackout", 0)) <= 0.0),
+					_step(_go_text.bind("engineer"), "engineer", func() -> bool: return _docked("engineer") or _loads_on()),
+					_step("A/D pick a load, SPACE switches it ON", "engineer", _loads_on),
+				],
+				over = func() -> bool: return float(_state.get("blackout", 0)) <= 0.0 and _loads_on(),
+				outcome = func() -> Array:
+					return ["POWER BACK - repair any station marked X", true] if _loads_on() \
+						else ["Loads are still OFF - Engineer: switch them on", false],
+				timeout = 35.0,
+			}
+		"repair":
+			var role: String = s.get("offline", [""])[0]
+			return {
+				title = "STATION OFFLINE",
+				panes = [
+					{title = "Station offline", rect = ROOMS.get(role, Rect2()),
+					 body = "The %s is broken (a missed ticket or damage). It's useless until someone repairs it. Repairs have no timer, but every second it's down hurts." % PLACE.get(role, role)},
+					{title = "Repair it",
+					 body = "Walk into its ring, SPACE to dock, then HOLD SPACE until the ring fills. The Radiator part makes repairs 40% faster."},
+				],
+				steps = [
+					_step("Go to the %s" % PLACE.get(role, role), role, func() -> bool: return _at(role) or not _offline(role)),
+					_step("SPACE to dock, then HOLD SPACE to repair", role, func() -> bool: return not _offline(role)),
+				],
+				over = func() -> bool: return not _offline(role),
+				outcome = func() -> Array: return ["%s BACK ONLINE" % PLACE.get(role, role), true],
+				timeout = 90.0,
+			}
+		"low_power":
+			return {
+				title = "LOW BATTERY",
+				panes = [
+					{title = "Battery low", rect = Rect2(124, 6, 80, 12),
+					 body = "The loads use more power than the panels make, and the battery is almost empty. At zero everything trips off (brownout). Sunlight also gets weaker the farther you fly from the Sun."},
+					{title = "Save power", rect = ROOMS.engineer,
+					 body = "ENGINEER: at the Engine Room, A/D pick a load and SPACE to switch it OFF (the heater and instruments are hungry). In design: bigger solar, RTG or battery - each costs mass."},
+				],
+				steps = [
+					_step(_go_text.bind("engineer"), "engineer", func() -> bool: return _docked("engineer") or _power_ok()),
+					_step("Switch a load OFF (A/D pick, SPACE)", "engineer", _power_ok),
+				],
+				over = _power_ok,
+				outcome = func() -> Array:
+					return ["POWER SAVED - the battery is recovering", true] if _power_ok() \
+						else ["Still draining - switch more loads off", false],
+				timeout = 40.0,
+			}
+		"data_full":
+			return {
+				title = "STORAGE FULL",
+				panes = [
+					{title = "Storage almost full", rect = Rect2(30, 6, 290, 12),
+					 body = "The recorder is almost full. New science that doesn't fit is LOST, and only science that reaches Earth scores."},
+					{title = "Send it home", rect = ROOMS.comms,
+					 body = "COMMS: dock at Comms and HOLD SPACE while a Deep Space Network station is in view (transmitter on). Recorders store more; a high-gain dish sends faster."},
+				],
+				steps = [
+					_step(_go_text.bind("comms"), "comms", func() -> bool: return _docked("comms") or _data_ok()),
+					_step(func() -> String:
+						var dsn: Dictionary = _state.get("dsn", {})
+						if dsn.get("site", "") == "":
+							return "Wait for a DSN station (%ds), then HOLD SPACE" % ceili(dsn.get("time_left", 0))
+						return "HOLD SPACE: downlink to %s" % dsn.site, "comms", _data_ok),
+				],
+				over = _data_ok,
+				outcome = func() -> Array:
+					return ["DATA SENT HOME", true] if _data_ok() else ["Storage still full - science is being lost", false],
+				timeout = 45.0,
+			}
+		"science_window":
+			return _fault_guide("science_window", "scientist", "SCIENCE WINDOW", [
+				{title = "Science window", rect = TICKETS,
+				 body = "Something worth observing is happening (here: a dust storm on Mars). The window closes when the ticket's timer runs out."},
+				{title = "Observe", rect = ROOMS.scientist,
+				 body = "SCIENTIST: dock at the Science Lab and HOLD SPACE. The instruments must be ON (the Engineer switches them). It fills storage, so Comms must downlink it later."},
+			], "Observation captured", "WINDOW MISSED - the science is lost")
+		"solar_storm":
+			return _fault_guide("solar_storm", "engineer", "STORM FAULT", [
+				{title = "Solar storm fault", rect = TICKETS,
+				 body = "Charged particles flipped bits in the power electronics. Fix it before the ticket's timer runs out, or the Engine Room goes OFFLINE."},
+				{title = "Reset it", rect = ROOMS.engineer,
+				 body = "ENGINEER: dock at the Engine Room and HOLD SPACE until the ring fills. A rad-hard computer makes these faults much rarer."},
+			], "FAULT CLEARED", "MISSED - Engine Room OFFLINE, repair it")
+		"thruster_leak":
+			return _fault_guide("thruster_leak", "navigator", "THRUSTER LEAK", [
+				{title = "Thruster leak", rect = TICKETS,
+				 body = "A thruster valve is stuck and leaking propellant. Fix it before the ticket's timer runs out, or the Bridge goes OFFLINE."},
+				{title = "Close the valve", rect = ROOMS.navigator,
+				 body = "NAVIGATOR: dock at the Bridge and HOLD SPACE until the ring fills. Reaction wheels mean the thrusters fire less, so leaks are rarer."},
+			], "LEAK FIXED", "MISSED - Bridge OFFLINE, repair it")
+		"antenna_glitch":
+			return _fault_guide("antenna_glitch", "comms", "ANTENNA GLITCH", [
+				{title = "Antenna glitch", rect = TICKETS,
+				 body = "The antenna lost its lock on Earth. Fix it before the ticket's timer runs out, or Comms goes OFFLINE and nothing gets sent home."},
+				{title = "Re-point it", rect = ROOMS.comms,
+				 body = "COMMS: dock at the Comms console and HOLD SPACE until the ring fills."},
+			], "ANTENNA LOCKED", "MISSED - Comms OFFLINE, repair it")
+	return {}
+
+
+## Walkthrough for a timed ticket on one station (faults and science windows).
+func _fault_guide(kind: String, role: String, title: String, panes: Array, good: String, bad: String) -> Dictionary:
+	var id := int(_ticket(kind).get("id", -1))
+	var last := {left = 99.0}
+	var steps := [_step(_go_text.bind(role), role, func() -> bool: return _docked(role) or _ticket_by_id(id).is_empty())]
+	if kind == "science_window":
+		steps.push_front(_step("Instruments must be ON (Engineer)", "engineer",
+				func() -> bool: return _state.get("loads", {}).get("instruments", false) or _ticket_by_id(id).is_empty()))
+	steps.append(_step("HOLD SPACE until the ring fills", role, func() -> bool: return _ticket_by_id(id).is_empty()))
+	return {
+		title = title, panes = panes, steps = steps,
+		over = func() -> bool:
+			var t := _ticket_by_id(id)
+			if not t.is_empty():
+				last.left = float(t.time_left)
+			return t.is_empty(),
+		outcome = func() -> Array:
+			var missed: bool = _offline(role) if kind in FAULTS else float(last.left) < 0.6
+			return [bad, false] if missed else [good, true],
+		timeout = 60.0,
+	}
+
+
+func _shields() -> bool:
+	return _state.get("cme", {}).get("shields", false)
+
+
+func _safe() -> bool:
+	return _state.get("cme", {}).get("safe", false)
+
+
+func _shield_open() -> bool:
+	var st := _station("team")
+	return st != null and st.minigame() is ShieldGame
+
+
+func _safe_open() -> bool:
+	var st := _station("engineer")
+	return st != null and st.minigame() is SafeModeGame
+
+
+func _dust_phase() -> String:
+	return _state.get("dust", {}).get("phase", "")
+
+
+func _loads_on() -> bool:
+	var loads: Dictionary = _state.get("loads", {})
+	return loads.get("instruments", false) or loads.get("transmitter", false)
+
+
+func _power_ok() -> bool:
+	return float(_state.get("power", 0.0)) >= 32.0
+
+
+func _data_ok() -> bool:
+	return float(_state.get("data", 100.0)) < 60.0
+
+
+# --- drawing ---------------------------------------------------------------------------------
+
+func _draw_guide() -> void:
+	var c := _canvas
+	var font := UiFont.font()
+	if not _guide.is_empty() and not (_dialog and _dialog.is_open()):
+		var steps: Array = _guide.steps
+		var i := mini(_reached, steps.size() - 1)
+		var step: Dictionary = steps[i]
+		var text: String = (step.text as Callable).call() if step.text is Callable else str(step.text)
+		var head := "HOW TO BEAT IT: %s" % _guide.title
+		var w := maxf(UiFont.width(text.to_upper(), 9), UiFont.width(head, 7)) + 40.0
+		var box := Rect2(240.0 - w / 2.0, 46, w, 25)
+		c.draw_rect(box, Color(0.02, 0.03, 0.08, 0.82))
+		c.draw_rect(box, Color(0.31, 0.85, 1.0, 0.8), false, 1.0)
+		c.draw_string(font, box.position + Vector2(6, 9), head, HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color("4fd8ff"))
+		# Step dots: done = green, current = blinking white.
+		for k in steps.size():
+			var dot := Vector2(box.end.x - 8 - (steps.size() - 1 - k) * 7, box.position.y + 6)
+			var col := Color("5cf07a") if k < _reached else (Color.WHITE if fmod(_time, 0.6) < 0.4 else Color("6b7390")) if k == i else Color("2c3454")
+			c.draw_rect(Rect2(dot - Vector2(2, 2), Vector2(4, 4)), col)
+		c.draw_string(font, box.position + Vector2(6, 20), "%d. %s" % [i + 1, text.to_upper()],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color.WHITE)
+		# Where to go: room outline + bouncing arrow over the station.
+		var role: String = step.role
+		var st := _station(role) if role != "" else null
+		if st and local and not _docked(role):
+			var room: Rect2 = ROOMS.get(role, Rect2())
+			var pulse := 0.4 + 0.4 * sin(_time * 6.0)
+			c.draw_rect(room.grow(1), Color(1.0, 0.85, 0.3, pulse), false, 1.0)
+			var tip := st.global_position + Vector2(0, -st.radius - 20 - 3.0 * absf(sin(_time * 5.0)))
+			c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-5, -6), tip + Vector2(-2, -6),
+					tip + Vector2(-2, -12), tip + Vector2(2, -12), tip + Vector2(2, -6), tip + Vector2(5, -6)]),
+					Color("ffc640"))
+			_arrow_to_offscreen_player(st)
+	if _result_left > 0.0:
+		var a := minf(_result_left, 1.0)
+		var col := Color("5cf07a") if _result_good else Color("ff5050")
+		var w2 := UiFont.width(_result, 10) + 16.0
+		var r := Rect2(240.0 - w2 / 2.0, 46, w2, 16)
+		c.draw_rect(r, Color(0.02, 0.03, 0.08, 0.85 * a))
+		c.draw_rect(r, Color(col, a), false, 1.0)
+		c.draw_string(font, r.position + Vector2(8, 12), _result, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(col, a))
+
+
+## A small chevron at the local player's feet pointing toward the target station.
+func _arrow_to_offscreen_player(st: Station) -> void:
+	var from := local.global_position
+	var to := st.global_position
+	if from.distance_to(to) < 40.0:
+		return
+	var dir := (to - from).normalized()
+	var p := from + dir * 14.0 + Vector2(0, -6)
+	var side := dir.orthogonal() * 3.0
+	_canvas.draw_colored_polygon(PackedVector2Array([p + dir * 5.0, p - dir * 2.0 + side, p - dir * 2.0 - side]),
+			Color(1.0, 0.78, 0.25, 0.6 + 0.4 * sin(_time * 8.0)))

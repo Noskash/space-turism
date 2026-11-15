@@ -54,6 +54,113 @@ sent through a signal bus → one place applies them. Keyboard first; phones-as-
 5. **Report**: launch angle vs ideal ~44°, trip time vs ~259 days, fuel used, science returned,
    why it went that way, NASA comparison card, 1–3 stars.
 
+## Design phase (built 2026-11-14, `scenes/design/designer.tscn`)
+Flow: level select → lobby → **Designer** → cruise (`game.tscn`). Mars' LevelData points at the designer.
+- One shared screen; every player has a cursor (WASD + SPACE). Columns: SHIP (class + READY) shared;
+  NAV / PWR / COM / SCI reachable only by players holding that role (`CrewRoles`). One shared pool of
+  slots, mass, power and budget, so roles compete. Launch when all players are READY and the ship
+  has no errors; any change un-readies everyone.
+- Rocket = cheapest launcher that lifts the ship's mass; its price comes out of the budget.
+- Power can go negative (allowed, shown red): the battery then drains in cruise — that is the lesson.
+- `DesignRules` (`scripts/design/design_rules.gd`): totals, limits, `check_add`, `mission_params(design)`.
+  Numbers: `data/design_stats.json` (first guesses, not balanced). Art/slots: asset JSONs.
+- Design → cruise: `DesignRules.chosen` → `Mission.start(design)`; fake_mission reads `mission_params`
+  (battery Wh, solar W, load watts, storage, data rate, downlink, DSN pass, burn fuel, repair time,
+  storm/leak rates, science per window).
+- Co-op: host owns the design; clients send `{type = toggle|class|ready}`; cursors relayed via host.
+- Known stretch: solar_large and RTG *make* power (net +W) — they "pay" in mass and budget instead.
+
+## Launch mini-game (built 2026-11-14, `scenes/launch/launch.tscn`)
+Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled on screen).
+- W/S push/pull a throttle lever (stays put). Co-op: throttle = AVERAGE of all players' levers.
+- Thrust/weight from ship mass vs rocket capacity (`DesignRules.evaluate`): heavy ships need more lever to lift off.
+- Max-Q = dynamic pressure (speed² × air density). Over the limit, STRESS builds: 75% = strained (+1 damage),
+  100% = **breakup → launch failed**. Fast/light rockets must throttle down; slow heavy ones barely reach max-Q.
+- Stage 1 burnout → SPACE to separate (auto after 4 s). Rocket dry before 7.8 km/s → the spacecraft's tank
+  finishes the climb; if that runs dry → **out of fuel, launch failed**. Failure: SPACE = new rocket, D = redesign.
+- Designer picks the cheapest rocket with a **10% lift margin** (`DesignRules.LIFT_MARGIN`). Ships at that
+  margin reach orbit only flown at full throttle with fast staging, with ~5% fuel left.
+- Result `{fuel_left, damage}` → `DesignRules.chosen.launch` → cruise starts with that fuel, and one station
+  OFFLINE (repair ticket) per damage hit.
+- Rocket sprites: light = electron, medium = zenit, heavy = proton (`sprites/rockets`). Host runs the flight.
+- Staging window: after stage 1 burnout, SPACE within 6 s (`STAGE_WINDOW`; beeps speed up after 75%). Missed ->
+  rocket falls back, parachute at 3 km, lands -> **launch failed** (same SPACE / D options).
+
+## Space weather (built 2026-11-15, in `fake_mission.gd`; port to Mission.gd later)
+- **Solar radiation storm** (solar particle event): first ~24 s, then every 42-58 s. Warning (siren + banner):
+  9 s from the base-kit weather sensor, 16 s with the **solar particle monitor** (SCI upgrade, `cme_warning: 7`).
+  What the crew can do depends on the design:
+  - **Radiation shielding bought** (PWR upgrade, 50 kg, `shields: 1`): ticket kind "shields", role "team"
+    (Mission Hub holo-table, anyone). SPACE opens `ShieldGame` (`scripts/game/minigames/shield_game.gd`): a needle
+    sweeps a gauge, SPACE in the green zone charges a capacitor (3; rad-hard CPU -> 2; each charge = faster
+    needle, smaller zone; miss = 0.4 s lockout). Success -> `cme.shields = true` (bubble around the hull) ->
+    wave is harmless + bonus storm science.
+  - **No shielding**: ticket kind "safe_mode", role "engineer". SPACE opens `SafeModeGame`
+    (`minigames/safe_mode_game.gd`): a row of breakers, cut the blinking one each time (A/D move, SPACE flip;
+    random order; wrong one = 0.5 s lockout; 4 breakers, rad-hard CPU -> 3) -> `cme.safe = true`: all loads off
+    and locked until the wave has passed (no science, no downlink), but no damage.
+  - Neither done when the wave (6 s) hits = **ship disabled**: blackout 10 s (solar bus tripped, loads off,
+    -15% battery; only `storm_proof_w` = RTG still generates), Engine room + one random station offline.
+- **Comet debris** (real: comet trails; hard rule #3 kept, it is labelled comet debris): first ~50 s, then every
+  45-60 s. Warning 7 s (+4 star tracker), then phase "stream" waits up to 8 s for a pilot. The Navigator docked
+  at the Bridge gets `DodgeGame` (`minigames/dodge_game.gd`): FULL SCREEN, Spacewar-style (A/D turn, W thrust,
+  S brake, screen wraps, no guns), 6 s, rocks fly in from the edges faster and faster. Runs on the pilot's
+  machine: `dodge_start` -> phase "flying" -> `dodge_result {hits, thrust, turning}`. No pilot = 3 hits.
+  Each hit: random station offline or -8% fuel. Reaction wheels: faster turning, turning costs no fuel.
+  Star tracker: earlier warning + red edge chevrons before rocks fly in. While flying, no downlink.
+- Minigames are CanvasLayers (layer 15) that call `Tutorial.hold()` so crew/station input is off meanwhile.
+- State: `cme {phase, time_left, duration, shielding, shields, safe}`, `blackout`,
+  `dust {phase, time_left, hits, wheels, tracker}`.
+- Part effects (data/design_stats.json): rad_shielding `shields`, particle_monitor `cme_warning`, rtg
+  `storm_proof_w`, computer_radhard `cme_tasks: -1` (= one fewer shield charge), star_tracker `dust_warning: 4`,
+  reaction_wheels `steer_free: 1` -> `DesignRules.mission_params`. New part art: `draw_upgrades.py` (19 upgrades).
+- Visuals: HUD banner, wave band sweeping from the Sun, blackout darkness, shield bubble, debris grains
+  outside the hull, hull impact sparks; sounds siren / wave / impact / static.
+
+## Radio (`scripts/game/radio_set.gd` object + `scripts/game/radio.gd` audio)
+- A boombox on the Mission Hub bench (RadioSet, use point 308,158). Walk up, SPACE = on/off
+  (CrewMember sends `{type = "radio"}`; sim keeps `state.radio = {on, track}`, so co-op peers hear the same radio;
+  switching on tunes to the next track). Notes float up while it plays.
+- 5 CC0 jazz tracks from OpenGameArt in `music/` (authors in `music/CREDITS.md`), on a "Music" bus (ESC menu
+  MUSIC level, saved). Dies in a blackout, static during a radiation wave.
+
+## ESC menu (`scripts/ui/pause_menu.gd`, class `PauseMenu`)
+- `PauseMenu.attach(scene, leave_text)` on designer / launch / cruise: RESUME, HOW TO PLAY, SOUND (Master bus,
+  saved in `user://settings.cfg`), FULLSCREEN, LEAVE (press twice), QUIT (press twice).
+- Offline it pauses the tree; in co-op the mission keeps running and only local input is blocked
+  (`Tutorial.hold()` shares the tutorial's input gate). Tutorial + PauseMenu + Sfx run with PROCESS_MODE_ALWAYS.
+
+## Cruise lighting (`scripts/game/ship_lighting.gd`, `shaders/light_*.gdshader`)
+- SIMPLIFIED: progress = day / 259 on the transfer ellipse (a 1.26 AU, e 0.206) -> Sun 1.00 -> 1.52 AU,
+  sunlight 1/r^2 (100% -> 43%). The Sun's screen direction sweeps left -> upper-right (exaggerated).
+  HUD shows "DAY n  x.xx AU".
+- Shadows (layer between map and crew): room walls, layout obstacles and crew (sheared sprite silhouette)
+  cast away from the Sun; longer and fainter as light weakens.
+- `light_shade` (multiply): far side darker, global dimming with distance, vignette, red emergency
+  lighting when power < ~22%. `light_glow` (add): sunlight + god rays, Earthshine fading, Mars glow growing,
+  station light pools (pulse on pending ticket, flicker offline), solar-storm shimmer.
+- Station nodes use z_index 45 so their panels sit above the lighting (z 40/41); Vfx particles are z 50.
+- Not done: solar panel output in the sim does NOT yet fall with distance (fake_mission / Person A).
+
+## Tutorial (`scripts/ui/tutorial.gd`, class `Tutorial`)
+- `Tutorial.attach(scene, id, panes)`: dialog panes `{title, body, rect}` (rect = highlight in 480x270 units).
+  Shown once per screen (designer / launch / cruise); SKIP on any pane turns it off everywhere; H reopens.
+  State in `user://tutorial.cfg`. While open, `Tutorial.is_blocking()` gates gameplay input; the host's open
+  tutorial holds the launch countdown and the cruise sim tick.
+- Cruise tickets: a "warn" chirp at 75% of a ticket's time, then "remind" beeps that speed up (`vfx.gd`).
+- **Event walkthroughs** (`scripts/game/event_guide.gd`, `EventGuide`): the first time each event happens
+  (radiation storm shielded / safe-mode, comet debris, blackout, the 3 faults, science window, repair, low
+  battery, full storage), a dialog explains it (real basis, who, how, which parts help; sim paused), then a live
+  "HOW TO BEAT IT" checklist under the banner + arrow over the station ticks off steps from sim state, then a
+  one-line outcome. Seen state `seen/event_<id>` in tutorial.cfg; off with SKIP TUTORIAL. In co-op only the
+  host's open dialog pauses the sim.
+
+## Presentation
+- Gameplay scenes use `PixelMode` (480x270, integer scale, **canvas_items** stretch) so UI text renders at
+  full resolution; pixel art keeps Nearest filtering. UI font: Share Tech Mono (OFL, `ui/fonts/`) via `UiFont`.
+- Cruise: stars stream past the hull (3 parallax layers), the ship bobs gently, engines flicker, reactor glows,
+  engine drone loop.
+
 ## Cruise gameplay (decided 2026-11-14)
 Overcooked loop: background pressure (battery drain, data filling, drift, DSN passes) + **tickets**
 (events) that pop on a station with a countdown.

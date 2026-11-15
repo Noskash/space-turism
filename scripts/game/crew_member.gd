@@ -62,6 +62,12 @@ func _physics_process(delta: float) -> void:
 	_alarm_left = maxf(_alarm_left - delta, 0.0)
 	if remote:
 		_process_remote(delta)
+	elif Tutorial.is_blocking():
+		velocity = Vector2.ZERO
+		running = false
+		if _docked:
+			_docked.set_holding(false)
+		_animate(false, "")
 	elif _docked:
 		_process_docked()
 	else:
@@ -81,6 +87,9 @@ func _process_walking() -> void:
 		_dock(_station)
 		Sfx.play("dock")
 		return
+	if _station == null and RadioSet.in_reach(global_position) and Input.is_action_just_pressed(_act("interact")):
+		Events.action_requested.emit("team", {type = "radio"})
+		Sfx.play("toggle")
 	var moving := get_real_velocity().length() > 1.0
 	_animate(moving, "alarm" if _alarm_left > 0.0 else "")
 
@@ -139,7 +148,7 @@ func _on_event_started(event: Dictionary) -> void:
 
 
 func has_role(station_role: String) -> bool:
-	return role == "all" or station_role in role.split("+")
+	return CrewRoles.has(role, station_role)
 
 
 func can_use(station: Station) -> bool:
@@ -148,7 +157,7 @@ func can_use(station: Station) -> bool:
 
 ## Colour of the first role ("comms+scientist" -> comms green).
 func role_color() -> Color:
-	return Station.ROLE_COLORS.get(role.split("+")[0], Color("e8e8e8"))
+	return CrewRoles.color(role)
 
 
 # --- network ---------------------------------------------------------------------------
@@ -197,6 +206,15 @@ func _apply_skin() -> void:
 		add_child(_sprite)
 	queue_redraw()
 	skin_changed.emit(skin)
+
+
+## Station whose ring we stand in (null = none). For the event walkthroughs.
+func near_station() -> Station:
+	return _docked if _docked else _station
+
+
+func docked_station() -> Station:
+	return _docked
 
 
 func _update_station() -> void:

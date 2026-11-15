@@ -31,6 +31,8 @@ var _time := 0.0
 var _state := {}
 var _ticket := {}        # oldest pending ticket for this role ({} = none)
 var _offline := false
+var _dust := {}          # state.dust (Navigator flies through comet debris from the Bridge)
+var _game: Node = null   # minigame this station opened for the local player (DodgeGame / ShieldGame)
 
 # Hold-to-work.
 var _holding := false
@@ -50,7 +52,7 @@ func setup(data: Dictionary) -> void:
 
 
 func _ready() -> void:
-	z_index = 5  # bubbles and panels draw over the crew
+	z_index = 45  # bubbles and panels draw over the crew and over the lighting (ShipLighting)
 	Events.state_changed.connect(_on_state_changed)
 
 
@@ -63,7 +65,21 @@ func can_reach(point: Vector2) -> bool:
 
 
 func has_alert() -> bool:
-	return _offline or not _ticket.is_empty()
+	return _offline or not _ticket.is_empty() or _dodging()
+
+
+## Navigator while comet debris is coming (warning, or waiting for a pilot).
+func _dodging() -> bool:
+	return role == "navigator" and _dust.get("phase", "") in ["warning", "stream", "flying"]
+
+
+func _local_docked() -> bool:
+	return _docked != null and not _docked.get("remote")
+
+
+## Minigame open for the local player at this station (null = none).
+func minigame() -> Node:
+	return _game if is_instance_valid(_game) else null
 
 
 func work_progress() -> float:
@@ -114,6 +130,12 @@ func set_holding(on: bool) -> void:
 	if on == _holding:
 		return
 	_holding = on
+	if on and _ticket.get("kind", "") == "shields" and _game == null and not _offline:
+		_open_shield_game()
+		return
+	if on and _ticket.get("kind", "") == "safe_mode" and _game == null and not _offline:
+		_open_safe_mode_game()
+		return
 	if on:
 		if not _ticket.is_empty():
 			_work_id = int(_ticket.id)
@@ -139,6 +161,7 @@ func set_holding(on: bool) -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
+	_watch_games()
 	if _work_id != -1:
 		if _ticket.is_empty() or int(_ticket.id) != _work_id:
 			_work_id = -1  # ticket expired or was replaced while we worked
@@ -156,17 +179,71 @@ func _process(delta: float) -> void:
 	queue_redraw()
 
 
+# --- minigames --------------------------------------------------------------------------
+
+func _watch_games() -> void:
+	if not is_instance_valid(_game):
+		_game = null
+	# Debris is here and our player sits at the Bridge: they fly it, full screen.
+	if role == "navigator" and _game == null and _local_docked() and not _offline \
+			and _dust.get("phase", "") == "stream":
+		var game := DodgeGame.new()
+		game.wheels = _dust.get("wheels", false)
+		game.tracker = _dust.get("tracker", false)
+		game.finished.connect(func(result: Dictionary) -> void:
+			_send({type = "dodge_result", hits = result.hits, thrust = result.thrust, turning = result.turning}))
+		_open(game)
+		_send({type = "dodge_start"})
+	# The wave arrived (ticket gone) while someone was still charging the shields.
+	if _game is ShieldGame and _ticket.get("kind", "") != "shields":
+		_game.abort()
+	if _game is SafeModeGame and _ticket.get("kind", "") != "safe_mode":
+		_game.abort()
+
+
+func _open_shield_game() -> void:
+	var game := ShieldGame.new()
+	game.charges_needed = int(_ticket.get("charges", 3))
+	game.deadline = float(_ticket.get("time_left", 15.0))
+	var id: int = int(_ticket.id)
+	game.finished.connect(func(result: Dictionary) -> void:
+		if result.ok:
+			_send({type = "resolve", id = id}))
+	_open(game)
+
+
+func _open_safe_mode_game() -> void:
+	var game := SafeModeGame.new()
+	game.breakers_needed = int(_ticket.get("breakers", 4))
+	game.deadline = float(_ticket.get("time_left", 9.0))
+	var id: int = int(_ticket.id)
+	game.finished.connect(func(result: Dictionary) -> void:
+		if result.ok:
+			_send({type = "resolve", id = id}))
+	_open(game)
+
+
+func _open(game: Node) -> void:
+	_game = game
+	set_holding(false)
+	var scene := get_tree().current_scene
+	if scene == null:
+		scene = get_parent().get_parent()  # Game root (stations live under ShipMap)
+	scene.add_child(game)
+
+
 func _send(action: Dictionary) -> void:
 	Events.action_requested.emit(role, action)
 
 
 func _on_state_changed(state: Dictionary) -> void:
 	_state = state
+	_dust = state.get("dust", {})
 	_offline = role in state.get("offline", [])
 	_ticket = {}
 	for event: Dictionary in state.get("events", []):
-		if event.role != role:
-			continue
+		if event.role != role or event.get("kind", "") == "dust":
+			continue  # the dust stream is dodged, not worked
 		# Repairs first: an offline station can do nothing else.
 		if _ticket.is_empty() or (event.repair and not _ticket.repair):
 			_ticket = event
@@ -200,14 +277,18 @@ func _draw() -> void:
 ## "!" bubble above the station with a countdown ring (or a blinking OFFLINE wrench).
 func _draw_bubble() -> void:
 	var center := Vector2(0, -radius - 10)
-	var urgent: bool = _offline or (_ticket.time_left >= 0.0 and _ticket.time_left < 4.0)
+	var ticket := _ticket
+	if ticket.is_empty():  # alert from the dust stream: show its countdown instead
+		var total: float = _dust.get("time_left", 0.0)
+		ticket = {time_left = total, duration = maxf(total, 12.0)}
+	var urgent: bool = _offline or (ticket.time_left >= 0.0 and ticket.time_left < 4.0)
 	var blink: bool = not urgent or fmod(_time, 0.4) < 0.25
 	var fill := ALERT_COLOR if _offline else color()
 	draw_circle(center, 6, Color(0, 0, 0, 0.75))
 	if blink:
 		draw_circle(center, 4, fill)
-	if not _offline and _ticket.time_left >= 0.0:
-		var left := clampf(_ticket.time_left / _ticket.duration, 0.0, 1.0)
+	if not _offline and ticket.time_left >= 0.0:
+		var left := clampf(ticket.time_left / ticket.duration, 0.0, 1.0)
 		draw_arc(center, 6, -PI / 2, -PI / 2 + TAU * left, 20, Color.WHITE, 1.0)
 	_text_centered(center + Vector2(0, 3), "X" if _offline else "!", Color.BLACK)
 
@@ -215,9 +296,22 @@ func _draw_bubble() -> void:
 ## Small panel above the docked crew: what USE and ←/→ do right now.
 func _draw_panel() -> void:
 	var lines: Array[String] = []
-	if not _ticket.is_empty():
+	if _ticket.get("kind", "") == "shields":
+		lines.append("RADIATION STORM IN %ds" % ceili(_ticket.time_left))
+		lines.append("SPACE: RAISE SHIELDS")
+	elif _ticket.get("kind", "") == "safe_mode":
+		lines.append("RADIATION STORM IN %ds" % ceili(_ticket.time_left))
+		lines.append("SPACE: SAFE MODE")
+	elif not _ticket.is_empty():
 		lines.append(_ticket.title.to_upper())
 		lines.append("HOLD SPACE: " + ("REPAIR" if _ticket.repair else "FIX"))
+	elif _dodging() and not _offline:
+		match _dust.get("phase", ""):
+			"warning":
+				lines.append("DEBRIS IN %ds" % ceili(_dust.get("time_left", 0)))
+				lines.append("STAY DOCKED: YOU FLY")
+			_:
+				lines.append("FLYING THROUGH DEBRIS")
 	elif _offline:
 		lines.append("OFFLINE")
 	else:
@@ -243,7 +337,7 @@ func _draw_panel() -> void:
 			_:
 				lines.append(label_text)
 
-	var font := ThemeDB.fallback_font
+	var font := UiFont.font()
 	var width := 0.0
 	for line in lines:
 		width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x)
@@ -265,7 +359,7 @@ func _draw_panel() -> void:
 
 
 func _text_centered(pos: Vector2, text: String, col: Color) -> void:
-	var font := ThemeDB.fallback_font
+	var font := UiFont.font()
 	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
 	draw_string(font, Vector2(roundf(pos.x - w / 2.0), roundf(pos.y)), text,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, col)

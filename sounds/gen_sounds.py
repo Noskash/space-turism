@@ -193,6 +193,132 @@ def hum():
     return out[: total - fade]
 
 
+# --- launch -------------------------------------------------------------------------------
+def rocket():
+    """1 s seamless roar: crunchy low noise + a rough low square. Pitch/volume follow throttle."""
+    seconds = 1.0
+    total = n(seconds)
+    out, lp, lp2, held = [], 0.0, 0.0, 0.0
+    for i in range(total):
+        if i % 2 == 0:
+            held = rng.uniform(-1, 1)
+        lp = lp * 0.82 + held * 0.18
+        lp2 = lp2 * 0.97 + held * 0.03
+        t = i / RATE
+        buzz = 0.18 * square(t * 40.0) * (0.6 + 0.4 * math.sin(2 * math.pi * 3 * t))
+        out.append(lp * 0.55 + lp2 * 1.6 + buzz)
+    fade = n(0.05)
+    for i in range(fade):
+        k = i / fade
+        out[i] = out[i] * k + out[total - fade + i] * (1 - k)
+    return out[: total - fade]
+
+
+def countdown():
+    return tone(880, 880, 0.09, volume=0.3, duty=0.5)
+
+
+def go():
+    return tone(1760, 1760, 0.25, volume=0.3, duty=0.5)
+
+
+def ignition():
+    boom = tone(120, 30, 0.6, wave_fn=tri, volume=0.8, curve=0.4)
+    hiss = noise(0.9, volume=0.6, smooth=0.7, step=2)
+    return mix(boom, hiss)
+
+
+def stage():
+    clunk = seq(tone(200, 90, 0.08, volume=0.6), noise(0.05, volume=0.5, smooth=0.2))
+    pop = noise(0.4, volume=0.45, smooth=0.6)
+    return seq(clunk, pop)
+
+
+def orbit():
+    notes = [0, 4, 7, 12, 16, 19, 24]
+    return seq(*[tone(note(s - 9), note(s - 9), 0.08, volume=0.28, duty=0.25) for s in notes],
+               tone(note(15), note(15), 0.4, volume=0.28, duty=0.25))
+
+
+def lever():
+    return mix(tone(300, 300, 0.025, volume=0.25, duty=0.25), noise(0.02, volume=0.2, smooth=0.1))
+
+
+def creak():
+    """Structural stress warning: metal groan."""
+    return mix(tone(90, 70, 0.5, wave_fn=tri, volume=0.5, curve=0.5), noise(0.5, volume=0.2, smooth=0.9))
+
+
+def engine():
+    """Cruise engine drone, 2 s seamless: pulsing low thrum."""
+    seconds = 2.0
+    total = n(seconds)
+    out, lp = [], 0.0
+    for i in range(total):
+        t = i / RATE
+        pulse = 0.75 + 0.25 * math.sin(2 * math.pi * 4 * t)
+        thrum = 0.22 * tri(t * 82.5) + 0.1 * square(t * 41.25, 0.3)
+        lp = lp * 0.9 + rng.uniform(-1, 1) * 0.1
+        out.append((thrum + lp * 0.25) * pulse)
+    fade = n(0.05)
+    for i in range(fade):
+        k = i / fade
+        out[i] = out[i] * k + out[total - fade + i] * (1 - k)
+    return out[: total - fade]
+
+
+# --- reminders / tutorial -------------------------------------------------------------------
+def remind():
+    """Clock-like double tick for a ticket (or stage window) running out."""
+    return seq(tone(1568, 1568, 0.03, volume=0.22, duty=0.25), silence(0.04),
+               tone(1568, 1568, 0.03, volume=0.22, duty=0.25))
+
+
+def warn():
+    """A ticket just crossed 75% of its time: short falling chirp."""
+    return seq(tone(1320, 880, 0.08, volume=0.25, duty=0.5), tone(1320, 880, 0.08, volume=0.25, duty=0.5))
+
+
+def chute():
+    """Parachute opening: cloth whoosh + snap."""
+    swell = noise(0.5, volume=0.5, smooth=0.85)
+    swell = [v * min(1.0, i / n(0.3)) for i, v in enumerate(swell)]
+    return seq(swell, tone(220, 140, 0.06, volume=0.4), noise(0.08, volume=0.3, smooth=0.3))
+
+
+def page():
+    """Tutorial pane turn."""
+    return seq(tone(988, 988, 0.03, volume=0.18, duty=0.25), tone(1319, 1319, 0.05, volume=0.18, duty=0.25))
+
+
+def siren():
+    """Radiation storm warning: two-tone rising/falling wail (1.2 s)."""
+    return seq(tone(520, 880, 0.6, wave_fn=tri, volume=0.38, curve=0.7),
+               tone(880, 520, 0.6, wave_fn=tri, volume=0.38, curve=1.4))
+
+
+def wave_hit():
+    """Radiation wave washing over the ship: rising hiss + low throb."""
+    total = n(2.0)
+    hiss = noise(2.0, volume=0.45, smooth=0.75)
+    hiss = [x * min(1.0, i / n(0.9)) for i, x in enumerate(hiss)]
+    throb = tone(70, 45, 2.0, wave_fn=tri, volume=0.5, attack=0.5)
+    return mix(hiss, throb)
+
+
+def impact():
+    """Dust grain hitting the hull: sharp metallic ping + crunch."""
+    ping = tone(2400, 1700, 0.25, wave_fn=tri, volume=0.35, curve=0.4)
+    crunch = noise(0.12, volume=0.6, step=2)
+    return mix(ping, crunch)
+
+
+def static():
+    """Radio interference, 1 s seamless: crackly band noise."""
+    out = noise(1.0, volume=0.25, smooth=0.3, attack=0.0, step=2)
+    return [x * (1.0 if rng.random() > 0.03 else 2.2) for x in out]
+
+
 SOUNDS = {
     "ui_hover": ui_hover, "ui_click": ui_click,
     "step": step, "dock": dock, "undock": undock, "select": select, "toggle": toggle,
@@ -200,6 +326,10 @@ SOUNDS = {
     "fixed": fixed, "alarm": alarm, "explode": explode, "fizzle": fizzle, "burn": burn,
     "brownout": brownout, "toast": toast,
     "downlink": downlink, "hum": hum,
+    "rocket": rocket, "countdown": countdown, "go": go, "ignition": ignition, "stage": stage,
+    "orbit": orbit, "lever": lever, "creak": creak, "engine": engine,
+    "remind": remind, "warn": warn, "chute": chute, "page": page,
+    "siren": siren, "wave": wave_hit, "impact": impact, "static": static,
 }
 
 if __name__ == "__main__":

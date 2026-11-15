@@ -107,6 +107,26 @@
       }
     },
     {
+      "id": "rad_shielding",
+      "name": "Radiation shielding",
+      "role": "engineer",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/rad_shielding.png",
+      "mounted": "mounted/rad_shielding.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
       "id": "antenna_high",
       "name": "High-gain dish",
       "role": "comms",
@@ -339,6 +359,26 @@
       "mounted_size": [
         18,
         18
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
+      "id": "particle_monitor",
+      "name": "Solar particle monitor",
+      "role": "scientist",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/particle_monitor.png",
+      "mounted": "mounted/particle_monitor.png",
+      "mounted_size": [
+        9,
+        9
       ],
       "stats": {
         "mass_kg": null,

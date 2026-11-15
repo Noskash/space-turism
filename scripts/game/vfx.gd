@@ -7,7 +7,8 @@ extends Node2D
 ##   science missed   -> grey fizzle                          station offline -> smoke + sparks
 ##   new ticket       -> red alarm vignette                   burn -> thruster plumes + shake
 ##   downlink         -> green data beam towards Earth        brownout -> lights flicker
-##   ambient          -> twinkling stars, idle thruster flicker, footstep dust (under the crew)
+##   ambient          -> stars streaming past (the ship flies right), gentle hull bob, animated
+##                       engine flames + reactor glow, footstep dust (under the crew)
 ##
 ## Particles are 1-2 px squares drawn at whole pixels (no textures, nothing smoothed).
 
@@ -27,7 +28,8 @@ var _under: Node2D       # sits between the map and the crew: footstep dust
 var _parts: Array[Dictionary] = []
 var _dust: Array[Dictionary] = []
 var _rings: Array[Dictionary] = []
-var _stars: Array[Vector3] = []   # x, y, phase
+var _stars: Array[Vector3] = []   # x, y, speed px/s (parallax layer)
+const HULL := Rect2(24, 14, 438, 243)  # stars are hidden behind this
 var _prev := {}
 var _crew_last := {}              # CrewMember -> last position
 var _rng := RandomNumberGenerator.new()
@@ -39,6 +41,18 @@ var _flicker := 0.0
 var _burn := 0.0
 var _downlink := 0.0
 var _emit_acc := {}               # name -> seconds since last emission
+
+## Ticket reminders: past 75% of a ticket's time, a clock tick that speeds up to the end.
+const REMIND_AT := 0.25           # fraction of time left
+var _ticket_time := {}            # id -> [time_left, duration], counted down locally between states
+var _warned := {}                 # id -> true once its 75% chirp played
+var _remind_timer := 0.0
+# Space weather (state.cme / state.blackout / state.dust).
+var _cme_phase := ""
+var _siren_timer := 0.0
+var _dust_phase := ""
+var _shields := false
+var _grains: Array[Vector3] = []  # x, y, speed: comet dust streaking past outside the hull
 
 
 func setup(game: Node2D, map: ShipMap, crew: Node2D) -> void:
@@ -59,11 +73,9 @@ func _ready() -> void:
 	_rng.randomize()
 	var stars_rng := RandomNumberGenerator.new()
 	stars_rng.seed = 7  # same sky on every peer
-	while _stars.size() < 40:
-		var p := Vector2(stars_rng.randi_range(0, 479), stars_rng.randi_range(0, 269))
-		# Only the black space around the hull.
-		if p.x < 24 or p.x > 462 or p.y < 14 or p.y > 257:
-			_stars.append(Vector3(p.x, p.y, stars_rng.randf() * TAU))
+	for i in 90:
+		var layer: float = [5.0, 12.0, 28.0][i % 3]
+		_stars.append(Vector3(stars_rng.randf_range(0, 480), stars_rng.randi_range(0, 269), layer))
 	Events.state_changed.connect(_on_state)
 	Events.event_started.connect(_on_event_started)
 
@@ -84,8 +96,14 @@ func _on_state(state: Dictionary) -> void:
 		_prev = state.duplicate(true)
 		return
 	var now_ids := {}
+	_ticket_time.clear()
 	for event: Dictionary in state.get("events", []):
 		now_ids[event.id] = true
+		if float(event.time_left) >= 0.0 and float(event.duration) > 0.0:
+			_ticket_time[event.id] = [float(event.time_left), float(event.duration)]
+			if event.time_left / event.duration < REMIND_AT and not _warned.has(event.id):
+				_warned[event.id] = true
+				Sfx.play("warn")
 	var was_offline: Array = _prev.get("offline", [])
 	var offline: Array = state.get("offline", [])
 	for event: Dictionary in _prev.get("events", []):
@@ -99,7 +117,9 @@ func _on_state(state: Dictionary) -> void:
 		else:
 			_success(at, Station.ROLE_COLORS.get(event.role, Color.WHITE))
 
-	if float(state.get("fuel", 0)) < float(_prev.get("fuel", 0)) - 1.0:
+	_weather(state)
+	var punctured: bool = int(state.get("dust", {}).get("hits", 0)) > int(_prev.get("dust", {}).get("hits", 0))
+	if not punctured and float(state.get("fuel", 0)) < float(_prev.get("fuel", 0)) - 1.0:
 		_burn = 0.6
 		Sfx.play("burn", _rng.randf_range(0.9, 1.1))
 		_shake = maxf(_shake, 0.35)
@@ -115,6 +135,41 @@ func _on_state(state: Dictionary) -> void:
 		_flicker = 1.4
 		Sfx.play("brownout")
 	_prev = state.duplicate(true)
+
+
+## Sounds + shakes for radiation storms, blackouts and dust impacts.
+func _weather(state: Dictionary) -> void:
+	var cme: String = state.get("cme", {}).get("phase", "")
+	var shields: bool = state.get("cme", {}).get("shields", false)
+	if shields and not _shields:
+		Sfx.play("orbit", 0.8)
+	_shields = shields
+	if cme != _cme_phase:
+		if cme == "warning":
+			_siren_timer = 0.0
+		elif cme == "wave":
+			Sfx.play("wave")
+			_shake = maxf(_shake, 0.8)
+			_alarm = 1.0
+		_cme_phase = cme
+	if float(state.get("blackout", 0)) > 0.0 and float(_prev.get("blackout", 0)) <= 0.0:
+		_flicker = 2.0
+		Sfx.play("brownout")
+		Sfx.play("explode", 0.5, -6.0)
+	var dust: Dictionary = state.get("dust", {})
+	_dust_phase = dust.get("phase", "")
+	var hits := int(dust.get("hits", 0)) - int(_prev.get("dust", {}).get("hits", 0))
+	for i in maxi(hits, 0):
+		# Impact somewhere on the hull's front half.
+		var at := Vector2(_rng.randf_range(250, 455), [18.0, 252.0][_rng.randi() % 2])
+		if _rng.randf() < 0.4:
+			at = Vector2(_rng.randf_range(440, 462), _rng.randf_range(40, 230))
+		Sfx.play("impact", _rng.randf_range(0.85, 1.15))
+		_shake = maxf(_shake, 0.7)
+		_rings.append({p = at, r = 2.0, speed = 40.0, life = 0.3, max = 0.3, col = Color.WHITE})
+		for k in 18:
+			_spark(at, Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(30, 90),
+					[Color.WHITE, Color("ffd890"), Color("c8b89a")][k % 3], 0.45, 0.0)
 
 
 func _station_pos(role: String) -> Vector2:
@@ -179,6 +234,23 @@ func _process(delta: float) -> void:
 	_burn = maxf(_burn - delta, 0.0)
 	_downlink = maxf(_downlink - delta, 0.0)
 
+	_tick_reminders(delta)
+	if _cme_phase == "warning":
+		_siren_timer -= delta
+		if _siren_timer <= 0.0:
+			_siren_timer = 1.6
+			Sfx.play("siren")
+	# Comet dust: grains streak past the hull (spawned only during the stream).
+	if _dust_phase in ["stream", "flying"] and _every("grain", 0.03, delta):
+		_grains.append(Vector3(490.0, _rng.randf_range(0, 270), _rng.randf_range(260, 520)))
+	for i in range(_grains.size() - 1, -1, -1):
+		var g := _grains[i]
+		g.x -= g.z * delta
+		if g.x < -20.0:
+			_grains.remove_at(i)
+		else:
+			_grains[i] = g
+
 	# Thrusters: idle flicker, big plumes while burning.
 	for nozzle: Vector2 in NOZZLES:
 		var burning := _burn > 0.0
@@ -228,12 +300,36 @@ func _process(delta: float) -> void:
 		ring.life -= delta
 	_rings = _rings.filter(func(r: Dictionary) -> bool: return r.life > 0.0)
 
+	for i in _stars.size():  # space streams past: the ship is flying to the right
+		var s := _stars[i]
+		s.x -= s.z * delta
+		if s.x < -4.0:
+			s.x += 488.0
+		_stars[i] = s
 	if _game:
 		var amp := ceilf(_shake * 4.0)
-		_game.position = Vector2(_rng.randi_range(-1, 1), _rng.randi_range(-1, 1)) * amp if amp > 0 else Vector2.ZERO
+		var shake := Vector2(_rng.randi_range(-1, 1), _rng.randi_range(-1, 1)) * amp if amp > 0 else Vector2.ZERO
+		var bob := Vector2(sin(_t * 0.7) * 0.6, sin(_t * 1.1) * 1.2)  # drifting in free fall
+		_game.position = bob + shake
 	queue_redraw()
 	if _under:
 		_under.queue_redraw()
+
+
+func _tick_reminders(delta: float) -> void:
+	var most_urgent := 1.0
+	for id in _ticket_time:
+		var t: Array = _ticket_time[id]
+		t[0] = maxf(t[0] - delta, 0.0)
+		most_urgent = minf(most_urgent, t[0] / t[1])
+	if most_urgent >= REMIND_AT:
+		_remind_timer = 0.0
+		return
+	_remind_timer -= delta
+	if _remind_timer <= 0.0:
+		var k := most_urgent / REMIND_AT          # 1 = just crossed 75%, 0 = out of time
+		_remind_timer = lerpf(0.22, 0.9, k)
+		Sfx.play("remind", 1.0 + (1.0 - k) * 0.5)
 
 
 func _step(list: Array[Dictionary], delta: float) -> void:
@@ -253,9 +349,46 @@ func _step(list: Array[Dictionary], delta: float) -> void:
 # --- drawing ---------------------------------------------------------------------------
 
 func _draw() -> void:
+	# Stars live in screen space (counter the ship's bob/shake) and hide behind the hull.
+	var cam := -_game.position if _game else Vector2.ZERO
 	for s in _stars:
-		var a := 0.35 + 0.65 * maxf(sin(_t * 1.7 + s.z), 0.0)
-		draw_rect(Rect2(s.x, s.y, 1, 1), Color(0.85, 0.9, 1.0, a))
+		var p := Vector2(s.x, s.y)
+		if HULL.has_point(p):
+			continue
+		var a := 0.3 + s.z / 40.0
+		var streak := 1.0 + (2.0 if s.z > 20.0 else 0.0)
+		draw_rect(Rect2(cam + p, Vector2(streak, 1)), Color(0.85, 0.9, 1.0, a))
+
+	# Radiation shield: a shimmering bubble around the hull while it is up (brighter in the wave).
+	if _shields:
+		var strong := 1.0 if _cme_phase == "wave" else 0.45
+		var pts := PackedVector2Array()
+		for i in 65:
+			var a := TAU * i / 64.0
+			var wob := 1.0 + 0.012 * sin(a * 9.0 + _t * 5.0)
+			pts.append(Vector2(243, 135) + Vector2(cos(a) * 236.0, sin(a) * 130.0) * wob)
+		draw_polyline(pts, Color(0.45, 0.85, 1.0, (0.35 + 0.2 * sin(_t * 6.0)) * strong), 2.0)
+		draw_polyline(pts, Color(0.8, 0.95, 1.0, 0.25 * strong), 1.0)
+	for g in _grains:
+		var gp := Vector2(g.x, g.y)
+		if not HULL.has_point(gp):
+			draw_rect(Rect2(cam + gp, Vector2(g.z / 40.0, 1)), Color(0.85, 0.78, 0.65, 0.75))
+
+	# Engines: layered flickering flames + glow at both nozzles, longer while burning.
+	for nozzle: Vector2 in NOZZLES:
+		var length := 7.0 + 2.0 * sin(_t * 23.0 + nozzle.y) + _rng.randf_range(-1.0, 1.0)
+		if _burn > 0.0:
+			length += 8.0
+		draw_circle(nozzle + Vector2(-2, 0), 7.0, Color(1.0, 0.55, 0.2, 0.12 + 0.05 * sin(_t * 9.0)))
+		var layers := [[3.0, 1.0, FIRE[2]], [2.0, 0.75, FIRE[1]], [1.0, 0.45, FIRE[0]]]
+		for layer in layers:
+			var half: float = layer[0]
+			var l: float = length * layer[1]
+			draw_colored_polygon(PackedVector2Array([nozzle + Vector2(0, -half), nozzle + Vector2(0, half + 1),
+					nozzle + Vector2(-l, 0.5)]), layer[2])
+	# Reactor in the Engine Room breathes.
+	var glow := 0.5 + 0.5 * sin(_t * 2.4)
+	draw_arc(ENGINE_CORE, 15.0 + glow, 0, TAU, 32, Color(1.0, 0.7, 0.25, 0.15 + 0.15 * glow), 2.0)
 
 	for ring in _rings:
 		var k: float = ring.life / ring.max
