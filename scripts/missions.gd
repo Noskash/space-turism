@@ -99,7 +99,7 @@ static func goal_progress(goal: Dictionary, state: Dictionary) -> Dictionary:
 			var n := int(state.get("science_lost", 0))
 			return {done = n < target, short = "LOST %d (<%d)" % [n, target]}
 		"orbit":
-			var days := int(current().get("cruise_days", 0))
+			var days := int(state.get("cruise_days", current().get("cruise_days", 0)))   # planner may change it
 			var short := "MARS: DAY %d/%d" % [mini(int(state.get("day", 0)), days), days]
 			if state.get("moi", {}).get("phase", "") == "window":
 				short = "MOI: BRAKE NOW!"

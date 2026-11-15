@@ -80,6 +80,22 @@ func _draw() -> void:
 			draw_rect(Rect2(at - Vector2.ONE, Vector2(CELL + 2, CELL + 2)), Color.WHITE, false, 1.0)
 
 
+## Top-left corners (local) of the class's upgrade cells, in the order upgrades fill them.
+## The hangar uses them to light free cells and to find the installed part next to a player.
+func upgrade_cells() -> Array[Vector2]:
+	var out: Array[Vector2] = []
+	var cls := DesignRules.class_info(design.get("ship_class", "balanced"))
+	var body := _tex(DesignRules.BASE_DIR + cls.get("body", ""))
+	if body == null:
+		return out
+	var ox := (SIZE.x - int(body.get_width())) / 2
+	var oy := (SIZE.y - int(body.get_height())) / 2 - 2
+	for cell: Dictionary in cls.get("cells", []):
+		if cell.use == "upgrade_slot":
+			out.append(Vector2(ox + cell.x, oy + cell.y))
+	return out
+
+
 func _mounted(id: String) -> Texture2D:
 	var p := DesignRules.part(id)
 	if p.is_empty():

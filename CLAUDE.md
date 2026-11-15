@@ -70,6 +70,46 @@ Flow: level select → lobby → **Designer** → cruise (`game.tscn`). Mars' Le
 - Co-op: host owns the design; clients send `{type = toggle|class|ready}`; cursors relayed via host.
 - Known stretch: solar_large and RTG *make* power (net +W) — they "pay" in mass and budget instead.
 
+## Assembly hangar hub (built 2026-11-15, `scenes/design/hangar.tscn`, `scripts/design/hangar.gd`)
+Flow now: level select / MissionSelect → lobby → **Hangar** → launch pad → cruise (launch "D = redesign", report and game
+over also return here). The menu Designer (`designer.tscn` → `planner.tscn`) still works but nothing points at it.
+- Map, collision, shelves, bay, stands, board, door: `sprites/hangar_assets/hangar_layout.json`. Crew = `CrewMember` with
+  `world_actions = false` (no hull/radio). Overlay (gantry) drawn above the crew.
+- SPACE at your role's shelf = pick the part up (drawn over your head); F = info card (9-slice `info_card.png`).
+  SPACE on the bay installs (`DesignRules.check_add`, free cells glow in the part's role colour); SPACE next to a fitted
+  part's cell takes it off (owner role only); SPACE at its shelf puts it back. A part is on its shelf when it is neither
+  installed nor carried, so shelves have no state. SPACE at a class stand switches class (extra parts drop back).
+- Wall board = `DesignRules.evaluate` (mass / power / budget / slots / rocket). Toast strip at the bottom shows the
+  first problem or "EVERYONE TO THE LAUNCH DOOR".
+- **Planner console** (`sprites/launch_planner_assets`, feet at 400,200 by the NAV rack): SPACE opens `planner.gd` in
+  EMBEDDED mode as an overlay (CanvasLayer 15): NAV holder moves date (A/D) / path (W/S) / Mars orbit (SPACE), Q closes.
+  Others can look. The console screen edge + tag show the plan (green / amber / red).
+- **Launch door zone** = READY (lights 1-4 by sorted peer id). All READY, no design errors, plan possible →
+  `LaunchWindow.apply(design, plan)` → `DesignRules.chosen` → launch.tscn. Any ship or plan change un-readies everyone.
+- Co-op: host owns `{design, plan, ready_by, carried}`; actions `take / return / install / remove / class / orbit / date /
+  speed / ready`; crew snapshots relayed through the host at 20 Hz. A player who leaves drops their part back on the shelf.
+- New key: F = `inspect` (Controls). Tutorial id "hangar" (7 panes); MissionBriefing first, as in the designer.
+
+## Launch window planner (built 2026-11-15, `scenes/launch/planner.tscn`)
+Flow: Hangar planner console (overlay) → launch pad → cruise; standalone screen kept for the old Designer. SIMPLIFIED physics, labelled on screen. Maths in `LaunchWindow`
+(`scripts/launch/launch_window.gd`, static); screen `scripts/launch/planner.gd`.
+- Earth/Mars on circles. Mars must lead Earth by the path's ideal angle on launch day (STANDARD Hohmann 259 d,
+  sweep 180° -> ~44°; FAST 180 d, sweep 150° -> ~56°, so its best day is ~25 days earlier). Earth gains 0.462°/day.
+- Plan `{offset (days from the mission's best date, ±120), speed}`. Departure Δv = path Δv (2.9 / 3.8 km/s) +
+  0.004 × (deg off ideal)². Rocket gives 2.9 + spare from lift margin (`rocket_spare`, max 1.2); the rest is burned
+  from the SHIP's tank at 22 %/km/s. STANDARD is free within ~±20 days; ±60 d ≈ 63 %; beyond ~±70 d impossible.
+- Best date = the mission's real NASA launch date (`missions.json` `launch_date`: Odyssey 2001-04-07, MRO 2005-08-12,
+  MAVEN 2013-11-18); sandbox 2026-11-20 (approx. window). Screen also shows "next window +26 months".
+- Screen: orbit diagram (Earth, Mars now, angle wedge, path coloured by cost, Mars on arrival + miss line),
+  numbers (Δv, rocket, tank burn, brake need, tank after departure), fuel-vs-date chart (green dip = window).
+- Co-op: designer pattern (host owns the plan). Only a NAV holder moves the date (A/D hold or drag the chart) / path (W/S);
+  SPACE = READY for all; any change un-readies. Impossible date (cost ≥ 100%) can't be READY.
+- `LaunchWindow.apply` writes `design.plan = {offset, speed, date, trip_days, dv, fuel_cost, moi_mult}`:
+  fake_mission `cruise_days` = trip (cruise_seconds scaled by trip/259), start fuel = launch fuel_left − fuel_cost;
+  `Orbits.moi_fuel` × moi_mult (FAST 1.4); goal line uses state.cruise_days; report explains date cost / FAST.
+- No plan (tests, mission "") = old behaviour. Later: opens from the planner console in the walk-around hub
+  (`sprites/launch_planner_assets`).
+
 ## Launch mini-game (built 2026-11-14, `scenes/launch/launch.tscn`)
 Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled on screen).
 - MOUSE drags a heavy throttle lever on a pivot (stays put; W/S nudge as fallback). Feel = spring to the hand + damping +
@@ -459,6 +499,9 @@ the folded spacecraft in the fairing (not drawn yet).
 - `parts/upgrades/` — 17 upgrades: `icons/`, `mounted/`, `frames/` (role-coloured slot frames,
   linked plates for external parts), `loadouts/` examples, `parts_upgrades.json`.
 - `crew/` — `<role>/sheet.png` (16×16 frames, 8 cols × 4 rows), `portraits/` (32×32), `crew.json`.
+- `sprites/launch_planner_assets/` — launch window planner console for the (planned) walk-around design hub:
+  48×48 sheet (idle / highlight / offline), `planner.json` (anchor, interact point, obstacle, screen rect),
+  previews in the current Mission Hub. Generator `draw_planner.py`. Asset only — not placed in any scene yet.
   Feet anchor (8,15). Rows: 0 idle d/u/l/r ×2; 1 walk down 0-3, up 4-7; 2 walk left 0-3, right 4-7;
   3 work_up 0-1, work_down 2-3, alarm 4-5. Play `alarm` when an event hits that role's station.
 - Every PNG has an `@4x` copy; coordinates in JSON are 1× pixels. Python generator scripts (Pillow)
@@ -501,6 +544,27 @@ signal mission_finished(report: Dictionary)
 ## Demo script (3 min) — build everything to serve this
 Pick a mission → overload instruments → fail on data downlink with the explanation → fix it two
 different ways → both succeed with different scores → NASA comparison.
+
+## Next up (agreed 2026-11-15, in this order unless we re-plan)
+Gameplay picks (real crew/mission problems):
+1. **Solar power fades with distance** — sim solar output x 1/r² (100% -> ~43% at Mars); lighting already shows it,
+   fake_mission does not. ~1 h.
+2. **Team page and mission phases report** — MissionReport TEAM page (who did what, unattended stations, handoffs)
+   + per-phase breakdown design -> launch -> cruise -> MOI -> orbit (NASA brief: collaboration, post-mission analysis).
+3. **Backup B-side redundancy upgrade** — new upgrade (mass + power): a broken station switches to its backup with
+   a short hold instead of a long repair, once (real probes carry A/B computers, IMUs, wheels).
+
+Planning picks (NASA brief: "mission planning", "launch planning", "mission timeline", "end-of-mission planning"):
+4. **Launch window planner** — DONE (logic + screen, see section above; hub console art ready, not placed). Was: the missing phase 2: pick the launch date, dotted transfer path + ghost Mars,
+   date sets Δv / fuel left / trip time (Mars windows every ~26 months). Needs the orbit sim (`predict_path()` is a stub).
+5. **Mission timeline on the holo-table** — team places plan blocks on day 0..259 (correction burns, pre-conjunction
+   recording, drain recorder before MOI); they become scheduled tickets; report PLAN vs ACTUAL. Makes PLAN a real role.
+6. **End-of-mission orbit disposal planning** — keep fuel to raise the orbit at end of life (planetary protection);
+   plugs into the orbit lifetime calculation.
+
+Not now: crew fatigue/stamina (one bar too many). Later candidates: light-time delay messages, CO2 scrubbers,
+exercise station, playable orbit phase with rover relay, data compression, Mars dust storm.
+Facts for any of these must be checked against NASA/JPL sources before they go on screen.
 
 ## Still open
 - Mission balance with real players (targets in data/missions.json); Russian level-select cards vs English game text.

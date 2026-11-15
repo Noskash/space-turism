@@ -7,7 +7,7 @@ extends CanvasLayer
 ## mission, ESC = main menu. In co-op the host decides for everyone (RPC), others can only leave.
 ## Every peer builds it from the synced state, saves best stars and unlocks Codex terms.
 
-const DESIGNER_SCENE := "res://scenes/design/designer.tscn"
+const DESIGNER_SCENE := "res://scenes/design/hangar.tscn"
 const MENU_SCENE := "res://scenes/main_menu.tscn"
 const DELAY := 2.2            # let the arrival message / brake burn play first
 
@@ -147,6 +147,13 @@ func _reasons() -> Array[String]:
 					int(st.get("fuel_at_moi", 0)), orbit_name, need, hint])
 		_:
 			out.append("Nobody held the brake in time - the ship flew past Mars.")
+	var plan: Dictionary = design.get("plan", {})   # launch window planner
+	if float(plan.get("fuel_cost", 0.0)) > 0.5:
+		out.append("Launching on %s, off the best window, burned %d%% of the ship's own fuel to catch Mars." % [
+				str(plan.get("date", "")), ceili(float(plan.fuel_cost))])
+	if str(plan.get("speed", "")) == "fast":
+		out.append("FAST path: Mars in %d days instead of 259, but the brake burn needed x%.1f fuel." % [
+				int(plan.get("trip_days", 180)), float(plan.get("moi_mult", 1.4))])
 	if int(st.get("leaks", 0)) > 0:
 		out.append("Debris punctured a fuel line on day %d - the leak cost %d%% fuel before it was sealed." % [
 				int(st.get("leak_day", 0)), int(st.get("leak_fuel", 0))])

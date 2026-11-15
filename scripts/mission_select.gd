@@ -146,7 +146,7 @@ func _pick() -> void:
 	data.title = str(m.title).capitalize()   # the card shows "МАРС · МИССИЯ n" above it
 	data.description = str(m.tagline)
 	if data.scene == "":
-		data.scene = "res://scenes/design/designer.tscn"
+		data.scene = "res://scenes/design/hangar.tscn"
 	var error := Network.create_room(data, level_number)
 	if error != OK:
 		_message = "Could not create the room: port %d is busy." % Network.DEFAULT_PORT

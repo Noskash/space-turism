@@ -136,8 +136,13 @@ func start(design: Dictionary) -> void:
 	_pace = PACE[crew]
 	_ticket_pace = TICKET_PACE[crew]
 	var cruise_days := float(mission.get("cruise_days", 0.0))
+	var cruise_seconds := float(mission.get("cruise_seconds", 150.0))
+	var trip := LaunchWindow.trip_days(design)   # launch window planner: STANDARD 259 d / FAST 180 d
+	if cruise_days > 0.0 and trip > 0.0:
+		cruise_seconds *= trip / float(LaunchWindow.PATHS.standard.trip)   # FAST is also shorter to play
+		cruise_days = trip
 	if cruise_days > 0.0:
-		_days_per_second = cruise_days / maxf(float(mission.get("cruise_seconds", 150.0)) * _pace, 1.0)
+		_days_per_second = cruise_days / maxf(cruise_seconds * _pace, 1.0)
 	_cme_timer = float(_sim.get("storm_first", CME_FIRST)) * _pace
 	_dust_timer = float(_sim.get("debris_first", DUST_FIRST)) * _pace
 	_event_timer = 4.0 * _ticket_pace
@@ -154,7 +159,8 @@ func start(design: Dictionary) -> void:
 		crew = {},              # key -> {astronaut, dose (mSv), sick, room} (set_crew + _tick_crew)
 		day = 0.0,
 		power = 80.0,
-		fuel = float(launch.get("fuel_left", 100.0)),  # what the launch left in the tank
+		# what the launch left in the tank, minus what the ship burned itself off the launch window
+		fuel = maxf(float(launch.get("fuel_left", 100.0)) - LaunchWindow.fuel_cost(design), 0.0),
 		data = 20.0,  # % of storage
 		science_sent = 0.0,     # SCORE: science that reached Earth (Comms downlink)
 		science_lost = 0.0,     # overflowed a full recorder

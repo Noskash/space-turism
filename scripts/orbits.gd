@@ -57,7 +57,8 @@ static func next_id(id: String) -> String:
 ## Fuel % the brake burn needs: the mission's base x the orbit x the design (large tank = smaller share).
 static func moi_fuel(design: Dictionary) -> float:
 	var base := float(Missions.sim().get("moi_fuel", 15.0))
-	return base * float(info(id_of(design)).get("moi_mult", 1.0)) * float(DesignRules.mission_params(design).get("moi_mult", 1.0))
+	return base * float(info(id_of(design)).get("moi_mult", 1.0)) * float(DesignRules.mission_params(design).get("moi_mult", 1.0)) \
+			* LaunchWindow.moi_mult(design)   # FAST path arrives faster -> bigger brake
 
 
 ## Does the current mission's science suit this orbit? (missions.json "favoured_orbit" = low | elliptical)

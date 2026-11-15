@@ -1,0 +1,69 @@
+{
+  "name": "launch_planner",
+  "label": "LAUNCH WINDOW PLANNER",
+  "role": "navigator",
+  "sheet": "planner_sheet.png",
+  "frame_size": [
+    48,
+    48
+  ],
+  "anchor": [
+    24,
+    43
+  ],
+  "animations": {
+    "idle": {
+      "row": 0,
+      "frames": 6,
+      "fps": 4
+    },
+    "highlight": {
+      "row": 1,
+      "frames": 6,
+      "fps": 6
+    },
+    "offline": {
+      "row": 2,
+      "frames": 1,
+      "fps": 1
+    }
+  },
+  "interact": {
+    "x": 24,
+    "y": 51,
+    "radius": 14
+  },
+  "obstacle": {
+    "x": 3,
+    "y": 27,
+    "w": 42,
+    "h": 16
+  },
+  "screen_rect": {
+    "x": 7,
+    "y": 5,
+    "w": 34,
+    "h": 20
+  },
+  "screen_geometry": {
+    "sun": [
+      24,
+      15
+    ],
+    "earth_orbit": [
+      6,
+      3.6
+    ],
+    "mars_orbit": [
+      12,
+      7.2
+    ],
+    "mars_lead_deg": 44,
+    "note": "angles counter-clockwise from +x with y up; Earth at 180 deg on launch day, arrival at 0 deg (Hohmann: 180 deg transfer, ~259 days)"
+  },
+  "demo_position_in_ship_map": {
+    "x": 272,
+    "y": 176,
+    "note": "Mission Hub, right of the holo-table (demo only)"
+  }
+}

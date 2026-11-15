@@ -19,7 +19,7 @@ extends Node2D
 ## The host runs the flight and sends it to everyone; clients send their lever (NetSync style).
 
 const GAME_SCENE := "res://scenes/game/game.tscn"
-const DESIGNER_SCENE := "res://scenes/design/designer.tscn"
+const DESIGNER_SCENE := "res://scenes/design/hangar.tscn"
 const MENU_SCENE := "res://scenes/main_menu.tscn"
 const JOIN_SCENE := "res://scenes/join_room.tscn"
 const ROCKET_DIR := "res://sprites/rockets/sprites_1x/"

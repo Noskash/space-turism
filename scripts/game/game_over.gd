@@ -7,7 +7,7 @@ extends CanvasLayer
 ## Reads state.lost from Events.state_changed, so every co-op peer shows it.
 
 const MENU_SCENE := "res://scenes/main_menu.tscn"
-const DESIGNER_SCENE := "res://scenes/design/designer.tscn"
+const DESIGNER_SCENE := "res://scenes/design/hangar.tscn"
 
 var _reason := ""
 var _canvas: Node2D

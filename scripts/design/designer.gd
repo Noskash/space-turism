@@ -10,7 +10,7 @@ extends Node2D
 ## design back; cursors are relayed through the host (same pattern as NetSync in the game).
 ## Offline (no room) everything is applied locally.
 
-const LAUNCH_SCENE := "res://scenes/launch/launch.tscn"
+const LAUNCH_SCENE := "res://scenes/launch/planner.tscn"   # launch window planner, then the pad
 const MENU_SCENE := "res://scenes/main_menu.tscn"
 const JOIN_SCENE := "res://scenes/join_room.tscn"
 

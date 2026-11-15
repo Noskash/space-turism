@@ -46,6 +46,9 @@ var show_marker := false
 var display_name := ""
 ## Run key held while moving (synced, so others see the faster animation).
 var running := false
+## Ship-only interactions (toolbox lockers, hull patching, radio). Off in the hangar, where the
+## scene handles SPACE itself.
+var world_actions := true
 
 var _station: Station = null     # station whose ring we stand in
 var _docked: Station = null      # station we are operating
@@ -126,7 +129,7 @@ func _process_walking() -> void:
 		_dock(_station)
 		Sfx.play("dock")
 		return
-	var hull := HullDamage.current
+	var hull := HullDamage.current if world_actions else null
 	if _station == null and hull and hull.locker_in_reach(global_position) >= 0 \
 			and Input.is_action_just_pressed(_act("interact")):
 		has_toolbox = not has_toolbox
@@ -136,7 +139,7 @@ func _process_walking() -> void:
 		Events.action_requested.emit("team", {type = "take_tool", id = int(hull.toolbox_near(global_position).id)})
 		has_toolbox = true
 		Sfx.play("clank", 1.2)
-	elif _station == null and RadioSet.in_reach(global_position) and Input.is_action_just_pressed(_act("interact")):
+	elif _station == null and world_actions and RadioSet.in_reach(global_position) and Input.is_action_just_pressed(_act("interact")):
 		Events.action_requested.emit("team", {type = "radio"})
 		Sfx.play("toggle")
 	elif _station == null and has_toolbox and hull and hull.breach_near(global_position).is_empty() \
@@ -152,7 +155,7 @@ func _process_walking() -> void:
 ## Patching a hull breach: standing next to one with a toolbox and holding USE. Returns true while
 ## patching (the crew member stands still and works instead of walking).
 func _process_hull() -> bool:
-	var hull := HullDamage.current
+	var hull := HullDamage.current if world_actions else null
 	var breach: Dictionary = hull.breach_near(global_position) if hull else {}
 	if breach.is_empty() or not has_toolbox or not Input.is_action_pressed(_act("interact")):
 		if _patch_id != -1:

@@ -18,6 +18,7 @@ const SCHEMES := {
 		"run": [KEY_SHIFT],  # hold while walking
 		"skin": [KEY_K],  # cycle skins (until the character screen picks them)
 		"tasks": [KEY_TAB],  # fold / unfold the HUD task list
+		"inspect": [KEY_F],  # hangar: read the part / stand / console in reach
 	},
 }
 
