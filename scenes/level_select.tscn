@@ -13,9 +13,9 @@ shader_parameter/warp = 0.0
 
 [sub_resource type="Resource" id="Resource_moon"]
 script = ExtResource("4_data")
-title = "Луна"
+title = "Moon"
 available = false
-description = "Облёт кратеров и прогулка в лёгкой гравитации — для первого полёта."
+description = "Fly over the craters and walk in low gravity - a first flight."
 accent_color = Color(0.7, 0.82, 1, 1)
 planet_color_a = Color(0.26, 0.26, 0.28, 1)
 planet_color_b = Color(0.8, 0.8, 0.78, 1)
@@ -23,9 +23,9 @@ atmosphere_color = Color(0.32, 0.36, 0.45, 1)
 
 [sub_resource type="Resource" id="Resource_mars"]
 script = ExtResource("4_data")
-title = "Марс"
+title = "Mars"
 scene = "res://scenes/design/hangar.tscn"
-description = "Пыльные бури, каньон Маринер и сувениры с вершины Олимпа."
+description = "Fly real NASA missions: solar storms, comet dust and the brake burn into orbit."
 has_missions = true
 accent_color = Color(1, 0.5, 0.3, 1)
 planet_color_a = Color(0.42, 0.13, 0.06, 1)
@@ -34,9 +34,9 @@ atmosphere_color = Color(1, 0.5, 0.3, 1)
 
 [sub_resource type="Resource" id="Resource_saturn"]
 script = ExtResource("4_data")
-title = "Сатурн"
+title = "Saturn"
 available = false
-description = "Самый дальний маршрут: полёт вдоль колец и вид на полярный шторм."
+description = "The longest route: along the rings to the polar storm."
 accent_color = Color(1, 0.8, 0.4, 1)
 planet_color_a = Color(0.62, 0.48, 0.28, 1)
 planet_color_b = Color(0.96, 0.86, 0.62, 1)
@@ -108,7 +108,7 @@ mouse_filter = 2
 layout_mode = 2
 size_flags_horizontal = 3
 theme_type_variation = &"HeaderLabel"
-text = "НОВАЯ КОМНАТА"
+text = "NEW ROOM"
 
 [node name="BackButton" type="Button" parent="Margin/VBox/Header"]
 unique_name_in_owner = true
@@ -116,12 +116,12 @@ layout_mode = 2
 size_flags_vertical = 4
 focus_mode = 0
 theme_override_font_sizes/font_size = 18
-text = "НАЗАД"
+text = "BACK"
 
 [node name="Subtitle" type="Label" parent="Margin/VBox"]
 layout_mode = 2
 theme_type_variation = &"SubtitleLabel"
-text = "ВЫБЕРИ, КУДА ПОЛЕТИТ ЭКИПАЖ"
+text = "CHOOSE WHERE YOUR CREW FLIES"
 
 [node name="Cards" type="HBoxContainer" parent="Margin/VBox"]
 unique_name_in_owner = true
@@ -134,7 +134,7 @@ alignment = 1
 [node name="Hint" type="Label" parent="Margin/VBox"]
 layout_mode = 2
 theme_type_variation = &"HintLabel"
-text = "Стрелки — выбрать  ·  Enter — создать комнату  ·  Esc — назад"
+text = "Arrows - choose  ·  Enter - create room  ·  Esc - back"
 horizontal_alignment = 1
 
 [node name="Notice" type="Label" parent="."]

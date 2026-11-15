@@ -1,14 +1,14 @@
 class_name CharacterData
 extends Resource
-## Описание одного персонажа для экрана «О персонажах».
+## One character for the CREW screen.
 
-## Имя, которое видит игрок.
+## The name the player sees.
 @export var display_name: String = ""
-## Кто он в команде: пилот, гид и т. п.
+## Their job on the team: pilot, guide, etc.
 @export var role: String = ""
-## Пара фраз о персонаже.
+## A couple of sentences about them.
 @export_multiline var description: String = ""
-## Портрет. Если не задан, вместо него рисуются инициалы.
+## Portrait. If not set, initials are drawn instead.
 @export var portrait: Texture2D
-## Цвет акцентов карточки.
+## The card's accent colour.
 @export var accent_color: Color = Color(0.35, 0.85, 1.0)

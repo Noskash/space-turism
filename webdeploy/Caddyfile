@@ -1,0 +1,16 @@
+{
+	admin off
+}
+
+:{$PORT:8080} {
+	root * /srv
+	# deploy.sh writes .gz copies next to the big files (index.wasm 40 MB -> ~10 MB): sent to every
+	# browser that accepts gzip, which is all of them.
+	file_server {
+		precompressed gzip
+	}
+	encode gzip
+	# Never cache the page or the game data: a redeploy must reach players on the next reload.
+	header Cache-Control "no-cache"
+	header X-Content-Type-Options "nosniff"
+}

@@ -1,14 +1,14 @@
 class_name LevelData
 extends Resource
-## Описание уровня для экрана выбора уровня.
+## A level's description for the level select screen.
 
-## Название, например «Луна».
+## Name, e.g. "Moon".
 @export var title: String = ""
-## Короткое описание маршрута (2–3 строки на карточке).
+## Short route description (2-3 lines on the card).
 @export_multiline var description: String = ""
-## Сцена уровня, которая загрузится после прыжка в гиперпространство.
+## The level scene loaded after the hyperspace jump.
 @export_file("*.tscn") var scene: String = ""
-## Цвет рамки и надписей карточки.
+## Colour of the card's frame and text.
 @export var accent_color: Color = Color(0.35, 0.85, 1.0)
 ## Mars campaign: the card opens the mission picker (MissionSelect) instead of creating a room.
 @export var has_missions: bool = false
@@ -19,17 +19,17 @@ extends Resource
 ## Sandbox hazard switches {storms, debris, hull, conjunction} (Missions.sim). Synced with the room.
 @export var options: Dictionary = {}
 
-@export_group("Планета на карточке")
+@export_group("Planet on the card")
 @export var planet_color_a: Color = Color(0.3, 0.3, 0.32)
 @export var planet_color_b: Color = Color(0.8, 0.8, 0.78)
 @export var atmosphere_color: Color = Color(0.35, 0.75, 1.0)
-## Полосы и облака вместо каменистой поверхности с кратерами.
+## Bands and clouds instead of a rocky, cratered surface.
 @export var gas_giant: bool = false
-## Кольца вокруг планеты.
+## Rings around the planet.
 @export var rings: bool = false
 
 
-## Данные для отправки по сети (ресурсы целиком по сети не передаются).
+## Data to send over the network (whole resources are not sent).
 func to_dict() -> Dictionary:
 	return {
 		"title": title,

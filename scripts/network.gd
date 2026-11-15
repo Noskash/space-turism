@@ -1,26 +1,26 @@
 extends Node
-## Сетевая игра: создание комнаты, подключение к ней и список игроков.
-## Подключён автозагрузкой под именем Network, поэтому живёт между сценами.
+## Network play: creating a room, joining it, and the player list.
+## An autoload named Network, so it lives across scenes.
 ##
-## Создатель комнаты — сервер (peer id 1), остальные игроки — клиенты.
-## Список игроков и выбранный уровень хранит сервер и рассылает клиентам.
+## The room's host is the server (peer id 1); the other players are clients.
+## The server keeps the player list and the chosen level and sends them to clients.
 ##
-## Два способа связи, вся игра (RPC) работает одинаково поверх обоих:
-## - через интернет (online = true): сервер-ретранслятор relay/server.js на Railway выдаёт
-##   код комнаты из 4 букв (RelayPeer, WebSocket);
-## - по локальной сети: ENet по IP-адресу и порту 7777.
+## Two transports; the whole game (RPC) works the same over both:
+## - online (online = true): the relay server relay/server.js on Railway hands out
+##   a 4-letter room code (RelayPeer, WebSocket);
+## - local network: ENet by IP address and port 7777.
 
-## Изменился список игроков или данные комнаты.
+## The player list or the room data changed.
 signal room_changed
-## Клиент подключился и получил данные комнаты.
+## A client connected and received the room data.
 signal joined_room
-## Подключиться не удалось.
+## Joining failed.
 signal join_failed(reason: String)
-## Связь с комнатой пропала (создатель её закрыл или пропала сеть).
+## Lost the room (the host closed it or the network dropped).
 signal room_closed(reason: String)
-## Создатель комнаты начал полёт — пора загружать уровень.
+## The host started the flight: time to load the level.
 signal game_started
-## Сервер-ретранслятор выдал код комнаты (только создателю, игра через интернет).
+## The relay server issued the room code (host only, online play).
 signal code_received(code: String)
 
 enum State { OFFLINE, HOSTING, CONNECTING, JOINED }
@@ -28,41 +28,41 @@ enum State { OFFLINE, HOSTING, CONNECTING, JOINED }
 const DEFAULT_PORT := 7777
 const MAX_PLAYERS := 4
 const CONNECT_TIMEOUT := 8.0
-## Части названий виртуальных сетевых адаптеров.
+## Name fragments of virtual network adapters.
 const VIRTUAL_ADAPTER_HINTS := ["virtualbox", "vmware", "vethernet", "hyper-v", "wsl", "docker",
 		"loopback", "bluetooth"]
-## Подсказка, если подключиться не выходит.
-const FIREWALL_HINT := "На компьютере с комнатой сеть должна быть «Частной», а игре — разрешён доступ в брандмауэре."
-## Сервер-ретранслятор для игры через интернет (Railway, проект space-turism-relay).
-## Переопределяется запуском с --relay=ws://127.0.0.1:8080 (локальный тест: cd relay && npm start).
+## Hint shown when joining does not work.
+const FIREWALL_HINT := "On the host's computer the network must be Private and the game allowed through the firewall."
+## Relay server for online play (Railway, project space-turism-relay).
+## Override with --relay=ws://127.0.0.1:8080 on the command line (local test: cd relay && npm start).
 const RELAY_URL := "wss://space-turism-relay-production.up.railway.app"
-## Почему не вышло подключиться через ретранслятор (RelayPeer.last_error → текст).
+## Why joining through the relay failed (RelayPeer.last_error -> text).
 const RELAY_ERRORS := {
-	"no_room": "Комнаты с таким кодом нет. Проверь код у создателя комнаты.",
-	"full": "Комната заполнена: в ней уже 4 игрока.",
-	"locked": "В этой комнате полёт уже начался.",
-	"busy": "Сервер занят или было слишком много попыток. Подожди минуту.",
-	"unreachable": "Сервер игры через интернет не отвечает. Проверь интернет.",
-	"lost": "Связь с сервером игры через интернет пропала.",
-	"host_left": "Создатель закрыл комнату.",
-	"expired": "Комната закрыта: она открыта больше 3 часов.",
+	"no_room": "No room with that code. Check the code with the room's host.",
+	"full": "The room is full: 4 players are already in.",
+	"locked": "This room's flight has already started.",
+	"busy": "The server is busy or there were too many tries. Wait a minute.",
+	"unreachable": "The online server does not answer. Check your internet.",
+	"lost": "Lost the connection to the online server.",
+	"host_left": "The host closed the room.",
+	"expired": "Room closed: it was open for more than 3 hours.",
 }
 
-## На каком адресе сервер ждёт подключений. «*» — на всех сетевых картах.
+## Address the server listens on. "*" = every network card.
 var bind_address := "*"
 var state := State.OFFLINE
-## Игроки комнаты: peer id → имя.
+## Players in the room: peer id -> name.
 var players: Dictionary = {}
-## Уровень, выбранный создателем комнаты, и его номер.
+## The level the host picked, and its number.
 var level: LevelData
 var level_number := 1
-## Сообщение для следующего экрана (например, почему пропала связь).
+## Message for the next screen (e.g. why the connection was lost).
 var pending_message := ""
-## Создавать комнаты через интернет (код комнаты) или по локальной сети (IP).
+## Create rooms online (room code) or on the local network (IP).
 var online := true
-## Код комнаты через интернет ("" — пока не выдан или комната по IP).
+## Online room code ("" = not issued yet, or an IP room).
 var room_code := ""
-## Адрес ретранслятора (RELAY_URL или --relay=...).
+## Relay address (RELAY_URL or --relay=...).
 var relay_url := RELAY_URL
 
 var _next_player_number := 1
@@ -99,8 +99,8 @@ func my_id() -> int:
 	return multiplayer.get_unique_id()
 
 
-## Создать комнату с выбранным уровнем. Возвращает OK или код ошибки.
-## Через интернет код комнаты придёт позже сигналом code_received (лобби уже можно открывать).
+## Create a room with the chosen level. Returns OK or an error code.
+## Online, the room code arrives later via code_received (the lobby can open already).
 func create_room(level_data: LevelData, number: int, port := DEFAULT_PORT) -> Error:
 	leave_room()
 	if OS.has_feature("web"):
@@ -125,7 +125,7 @@ func create_room(level_data: LevelData, number: int, port := DEFAULT_PORT) -> Er
 	return OK
 
 
-## Создатель в лобби, пока никто не вошёл: переключить комнату между интернетом и локальной сетью.
+## Host in the lobby while nobody has joined: switch the room between online and local network.
 func set_online(value: bool) -> Error:
 	if online == value:
 		return OK
@@ -135,14 +135,14 @@ func set_online(value: bool) -> Error:
 	if not is_host():
 		return OK
 	var error := create_room(level, level_number)
-	if error != OK:   # например, порт 7777 занят — возвращаемся к интернету
+	if error != OK:   # e.g. port 7777 is taken: back to online
 		online = not value
 		create_room(level, level_number)
 	return error
 
 
-## Подключиться к комнате по коду «KRMX» (через интернет) или по адресу «192.168.1.5[:7777]».
-## Результат придёт сигналом joined_room или join_failed.
+## Join a room by code "KRMX" (online) or by address "192.168.1.5[:7777]".
+## The result arrives as joined_room or join_failed.
 func join_room(address: String) -> Error:
 	leave_room()
 	if RelayPeer.looks_like_code(address):
@@ -165,7 +165,7 @@ func join_room(address: String) -> Error:
 	return OK
 
 
-## Выйти из комнаты. Если это создатель — комната закрывается для всех.
+## Leave the room. If this is the host, the room closes for everyone.
 func leave_room() -> void:
 	_connect_timer.stop()
 	var peer := multiplayer.multiplayer_peer
@@ -178,12 +178,12 @@ func leave_room() -> void:
 	room_code = ""
 
 
-## Комната через интернет (код), а не по IP.
+## An online room (code), not an IP room.
 func is_online_room() -> bool:
 	return multiplayer.multiplayer_peer is RelayPeer
 
 
-## Только для создателя: начать полёт у всех игроков.
+## Host only: start the flight for every player.
 func start_game() -> void:
 	if not is_host():
 		return
@@ -191,15 +191,15 @@ func start_game() -> void:
 	_start_game.rpc()
 
 
-## Только для создателя: пускать ли новых игроков.
+## Host only: whether new players may join.
 func set_room_open(open: bool) -> void:
 	if is_host():
 		multiplayer.multiplayer_peer.refuse_new_connections = not open
 
 
-## Локальные IPv4-адреса этого компьютера — их создатель называет друзьям.
-## Сначала адреса настоящих сетевых карт (Wi-Fi, Ethernet),
-## в конце — виртуальных (VirtualBox, WSL и т. п.): через них друзья не подключатся.
+## This computer's local IPv4 addresses - the host tells them to friends.
+## Real network cards first (Wi-Fi, Ethernet),
+## virtual ones last (VirtualBox, WSL, ...): friends can't join through those.
 func get_local_addresses() -> PackedStringArray:
 	var real := PackedStringArray()
 	var virtual := PackedStringArray()
@@ -217,7 +217,7 @@ func get_local_addresses() -> PackedStringArray:
 	return real + virtual
 
 
-## Разбирает «адрес» или «адрес:порт». Возвращает [адрес, порт] или пустой массив.
+## Parses "address" or "address:port". Returns [address, port] or an empty array.
 static func parse_address(text: String) -> Array:
 	var address := text.strip_edges()
 	var port := DEFAULT_PORT
@@ -233,12 +233,12 @@ static func parse_address(text: String) -> Array:
 
 
 func _take_player_name() -> String:
-	var player_name := "Игрок %d" % _next_player_number
+	var player_name := "Player %d" % _next_player_number
 	_next_player_number += 1
 	return player_name
 
 
-# --- События сети ---
+# --- Network events ---
 
 func _on_peer_connected(id: int) -> void:
 	if not is_host():
@@ -260,7 +260,7 @@ func _on_peer_disconnected(id: int) -> void:
 
 
 func _on_connected_to_server() -> void:
-	# Ждём, пока сервер пришлёт данные комнаты (_receive_room).
+	# Wait for the server to send the room data (_receive_room).
 	pass
 
 
@@ -270,7 +270,7 @@ func _on_code_received(code: String) -> void:
 	room_changed.emit()
 
 
-## Текст ошибки ретранслятора ("" — комната не через интернет или причина неизвестна).
+## Relay error text ("" = not an online room, or the reason is unknown).
 func _relay_error() -> String:
 	var peer := multiplayer.multiplayer_peer
 	if peer is RelayPeer:
@@ -282,7 +282,7 @@ func _on_connection_failed() -> void:
 	if state == State.CONNECTING:
 		var relay := _relay_error()
 		leave_room()
-		join_failed.emit(relay if relay != "" else "Не удалось подключиться. Проверь адрес. " + FIREWALL_HINT)
+		join_failed.emit(relay if relay != "" else "Could not connect. Check the address. " + FIREWALL_HINT)
 
 
 func _on_connect_timeout() -> void:
@@ -290,18 +290,18 @@ func _on_connect_timeout() -> void:
 		var relay := multiplayer.multiplayer_peer is RelayPeer
 		leave_room()
 		join_failed.emit(RELAY_ERRORS.unreachable if relay \
-				else "Комната не отвечает. Проверь адрес и что вы в одной сети. " + FIREWALL_HINT)
+				else "The room does not answer. Check the address and that you are on the same network. " + FIREWALL_HINT)
 
 
 func _on_server_disconnected() -> void:
 	var relay := _relay_error()
 	leave_room()
 	pending_message = relay if relay != "" \
-			else "Связь с комнатой пропала: создатель её закрыл или пропала сеть."
+			else "Lost the room: the host closed it or the network dropped."
 	room_closed.emit(pending_message)
 
 
-# --- RPC: вызывает только сервер (authority), выполняют клиенты ---
+# --- RPC: called by the server (authority) only, run on clients ---
 
 @rpc("authority", "call_remote", "reliable")
 func _receive_room(room_info: Dictionary) -> void:

@@ -1,17 +1,17 @@
 extends Control
-## Экран «Новая комната»: создатель комнаты выбирает уровень,
-## после чего комната создаётся и открывается её экран (лобби).
+## "New room" screen: the host picks a level,
+## then the room is created and its screen (the lobby) opens.
 
-## Уровни на экране. Сцену каждого уровня укажи в его поле Scene.
+## Levels on the screen. Set each level's scene in its Scene field.
 @export var levels: Array[LevelData] = []
-## Экран комнаты, куда переходим после создания.
+## The room screen to open after creating it.
 @export_file("*.tscn") var lobby_scene: String = "res://scenes/lobby.tscn"
-## Сцена, в которую возвращает кнопка «Назад».
+## Scene the BACK button returns to.
 @export_file("*.tscn") var menu_scene: String = "res://scenes/main_menu.tscn"
 
 const CARD_SCENE := preload("res://scenes/ui/level_card.tscn")
 
-## Какая карточка была выбрана последней — при возврате фокус встанет на неё.
+## The card picked last time - focus returns to it.
 static var _last_selected := 0
 
 @onready var _cards_box: HBoxContainer = %Cards
@@ -56,7 +56,7 @@ func _build_cards() -> void:
 		card.pressed.connect(_create_room.bind(data, i + 1, card))
 		_cards.append(card)
 
-	# Стрелки влево/вправо листают карточки по кругу.
+	# Left / right arrows cycle through the cards.
 	for i in _cards.size():
 		var card := _cards[i]
 		var previous := _cards[wrapi(i - 1, 0, _cards.size())]
@@ -83,7 +83,7 @@ func _create_room(data: LevelData, number: int, card: LevelCard) -> void:
 		return
 	var error := Network.create_room(data, number)
 	if error != OK:
-		_show_notice("Не удалось создать комнату: порт %d уже занят другой программой." \
+		_show_notice("Could not create the room: port %d is already used by another program." \
 				% Network.DEFAULT_PORT)
 		return
 	_go_to(lobby_scene)
@@ -103,7 +103,7 @@ func _go_to(path: String) -> void:
 	if _busy:
 		return
 	_busy = true
-	# Пока идёт переход, затемнение перехватывает клики мыши.
+	# During the transition the fade swallows mouse clicks.
 	_fade.mouse_filter = Control.MOUSE_FILTER_STOP
 	var tween := create_tween()
 	tween.tween_property(_fade, "color:a", 1.0, 0.3)

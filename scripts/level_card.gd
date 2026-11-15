@@ -1,7 +1,7 @@
 class_name LevelCard
 extends Button
-## Карточка уровня: вращающаяся планета, номер, название и описание.
-## Экран выбора создаёт карточки сам и вызывает setup() после add_child().
+## Level card: spinning planet, number, name and description.
+## The select screen creates the cards and calls setup() after add_child().
 
 const PLANET_SHADER := preload("res://shaders/planet_preview.gdshader")
 const HIGHLIGHT_SCALE := Vector2(1.04, 1.04)
@@ -27,13 +27,13 @@ func _ready() -> void:
 
 
 func setup(data: LevelData, number: int) -> void:
-	_number.text = "УРОВЕНЬ %d" % number
+	_number.text = "LEVEL %d" % number
 	_title.text = data.title
 	_description.text = data.description
-	# Campaign mission (lobby): "МАРС · МИССИЯ 1" on top, the mission name as the title.
+	# Campaign mission (lobby): "MARS · MISSION 1" on top, the mission name as the title.
 	var mission: Dictionary = Missions.mission(data.mission) if data.mission != "" else {}
 	if not mission.is_empty():
-		_number.text = "МАРС · МИССИЯ %d" % int(mission.number)
+		_number.text = "MARS · MISSION %d" % int(mission.number)
 		_title.text = str(mission.title).capitalize()
 	# Long titles wrap and shrink instead of stretching the card past its width.
 	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -50,7 +50,7 @@ func setup(data: LevelData, number: int) -> void:
 	planet_material.set_shader_parameter("gas_giant", data.gas_giant)
 	planet_material.set_shader_parameter("rings", data.rings)
 	planet_material.set_shader_parameter("ring_color", data.planet_color_b.lightened(0.15))
-	# С кольцами планета меньше, чтобы кольца поместились в квадрат.
+	# With rings the planet is smaller so the rings fit in the square.
 	planet_material.set_shader_parameter("planet_radius", 0.23 if data.rings else 0.34)
 	planet_material.set_shader_parameter("highlight", 0.0)
 	_planet.material = planet_material
@@ -120,7 +120,7 @@ func shake() -> void:
 		tw.tween_property(self, "rotation", deg_to_rad(k * 0.4), 0.05)
 
 
-## Карточка только для показа (в комнате): без нажатий, сразу подсвечена.
+## Display-only card (in the room): no presses, highlighted from the start.
 func show_as_selected() -> void:
 	focus_mode = Control.FOCUS_NONE
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -142,7 +142,7 @@ func _apply_accent(accent: Color) -> void:
 
 
 func _on_mouse_entered() -> void:
-	# Мышь и клавиатура выделяют одну и ту же карточку.
+	# Mouse and keyboard select the same card.
 	if not disabled:
 		grab_focus()
 

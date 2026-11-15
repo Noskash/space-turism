@@ -7,3 +7,6 @@ build/
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Railway web deploy: copied build (webdeploy/deploy.sh)
+webdeploy/site/

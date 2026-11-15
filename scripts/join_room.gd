@@ -1,12 +1,12 @@
 extends Control
-## Экран «Присоединиться»: подключение к комнате друга по коду (интернет) или IP-адресу.
+## JOIN screen: join a friend's room by code (online) or IP address.
 ## Drawn on the UI kit (UiKit + MenuKit) at 480x270 (PixelMode): one kit frame with the input well,
 ## live ONLINE CODE / LOCAL IP chips, status line, chunky JOIN / BACK buttons, keycap hints.
 ## Only the LineEdit is a real Control (typing, IME, the web virtual keyboard); the rest is _draw().
 
-## Сцена, в которую возвращает кнопка «Назад».
+## Scene the BACK button returns to.
 @export_file("*.tscn") var menu_scene: String = "res://scenes/main_menu.tscn"
-## Экран комнаты, куда попадаем после подключения.
+## The room screen to open after joining.
 @export_file("*.tscn") var lobby_scene: String = "res://scenes/lobby.tscn"
 
 const ACCENT := Color("4fd8ff")
@@ -17,7 +17,7 @@ const WELL := Rect2(116, 86, 248, 32)
 const JOIN_RECT := Rect2(170, 166, 140, 22)
 const BACK_RECT := Rect2(418, 8, 54, 20)
 
-## Последний введённый адрес — подставляется при следующем открытии экрана.
+## The last address typed - filled in next time the screen opens.
 static var _last_address := ""
 
 @onready var _address_input: LineEdit = %AddressInput
@@ -58,7 +58,7 @@ func _ready() -> void:
 	if Network.pending_message.is_empty():
 		_set_status("The 4-letter code (or the address) is on the host's room screen.", STATUS_INFO)
 	else:
-		_set_status(NetText.message(Network.pending_message), STATUS_ERROR)
+		_set_status(Network.pending_message, STATUS_ERROR)
 		Network.pending_message = ""
 
 	create_tween().tween_property(_fade, "color:a", 0.0, 0.4)
@@ -89,7 +89,7 @@ func _process(delta: float) -> void:
 
 
 func _input(event: InputEvent) -> void:
-	# Esc возвращает в меню, даже когда курсор в поле ввода.
+	# Esc returns to the menu even while the cursor is in the input field.
 	if not _busy and event.is_action_pressed("ui_cancel"):
 		get_viewport().set_input_as_handled()
 		_go_back()
@@ -160,11 +160,11 @@ func _on_joined_room() -> void:
 
 func _on_join_failed(reason: String) -> void:
 	_set_connecting(false)
-	_set_status(NetText.message(reason), STATUS_ERROR)
+	_set_status(reason, STATUS_ERROR)
 	_focus_input()
 
 
-## Ставит курсор в конец поля адреса, чтобы можно было сразу печатать.
+## Puts the cursor at the end of the address field so typing can start right away.
 func _focus_input() -> void:
 	_address_input.grab_focus()
 	_address_input.edit()

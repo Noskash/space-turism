@@ -1,13 +1,13 @@
 extends Control
-## Экран комнаты (лобби): код / адрес для друзей, экипаж и старт полёта.
-## У создателя комнаты есть кнопка «Начать полёт», остальные ждут старта.
+## Room screen (lobby): code / address for friends, the crew and the flight start.
+## The host has START FLIGHT; everyone else waits for it.
 ## Drawn on the UI kit (UiKit + MenuKit) at 480x270 (PixelMode): mission card, room code tiles (or
 ## the LAN address + the ONLINE / LOCAL IP switch while alone), four role-coloured crew slots (roles as
 ## the flight will hand them out, CrewRoles), status line, chunky START / LEAVE buttons, keycap hints.
 ## Root draws the backdrop + stars (they streak in the hyperspace jump); Content draws the UI so it can fade.
 
 @export_file("*.tscn") var menu_scene: String = "res://scenes/main_menu.tscn"
-## Куда попадает игрок, если связь с комнатой пропала.
+## Where the player goes if the room is lost.
 @export_file("*.tscn") var join_scene: String = "res://scenes/join_room.tscn"
 
 const ACCENT := Color("4fd8ff")
@@ -54,7 +54,7 @@ func _exit_tree() -> void:
 
 func _ready() -> void:
 	if not Network.is_in_room():
-		# Экран открыли без комнаты (например, запуском сцены из редактора).
+		# Opened without a room (e.g. the scene was run from the editor).
 		get_tree().change_scene_to_file.call_deferred(menu_scene)
 		return
 	UiKit.setup_canvas(self)
@@ -158,7 +158,7 @@ func _press(id: String) -> void:
 
 
 func _mode_visible() -> bool:
-	# Сменить способ можно, только пока в комнате один создатель (иначе все вылетят).
+	# The mode can change only while the host is alone (otherwise everyone would drop).
 	return Network.is_host() and Network.players.size() <= 1 and not OS.has_feature("web")   # no LAN in a browser
 
 
@@ -205,7 +205,7 @@ func _on_game_started() -> void:
 	var scene := Network.level.scene
 	var has_scene := not scene.is_empty() and ResourceLoader.exists(scene)
 
-	# Прыжок в гиперпространство: интерфейс гаснет, звёзды вытягиваются в лучи.
+	# Hyperspace jump: the UI fades, the stars stretch into streaks.
 	var jump := create_tween().set_parallel(true)
 	jump.tween_property(_content, "modulate:a", 0.0, 0.5)
 	jump.tween_property(self, "warp", 1.0, 1.8).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
@@ -216,7 +216,7 @@ func _on_game_started() -> void:
 		return
 
 	await jump.finished
-	push_warning("Lobby: у уровня «%s» не задана сцена — укажи её в поле Scene." % title)
+	push_warning("Lobby: level \"%s\" has no scene - set it in the Scene field." % title)
 	var back := create_tween().set_parallel(true)
 	back.tween_property(self, "warp", 0.0, 1.0).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	back.tween_property(_content, "modulate:a", 1.0, 0.5).set_delay(0.6)
@@ -228,7 +228,7 @@ func _on_game_started() -> void:
 
 
 func _on_room_closed(_reason: String) -> void:
-	# Причину покажет экран «Присоединиться» (Network.pending_message).
+	# The JOIN screen shows the reason (Network.pending_message).
 	_busy = false
 	_go_to(join_scene)
 

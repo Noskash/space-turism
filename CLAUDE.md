@@ -588,6 +588,28 @@ Rooms/lobby: `Network` autoload (`scripts/network.gd`). In the game scene, `NetS
   `--relay=ws://...` on the command line overrides it. Local test: `cd relay && npm start`, run the game twice with
   `--relay=ws://127.0.0.1:8080`, host -> code -> join.
 
+## Web + phone build (built 2026-11-15) — public at https://web-production-c47e249c.up.railway.app
+- Export preset "Web" (`export_presets.cfg`, no threads, JSON include filter). The MONO editor can't export to web: use the
+  standard Godot 4.7.2 console exe: `--headless --path . --export-release "Web" build/web/index.html`.
+  Publish: `bash webdeploy/deploy.sh [build/web]` -> Railway service **web** (same project as the relay; Caddy in
+  `webdeploy/Dockerfile` + `Caddyfile`, gzipped .wasm 40 -> 10 MB, no-cache so a redeploy shows on reload).
+  `railway add` re-links the current folder to the new service: `relay/` must stay linked to `space-turism-relay`.
+- Godot web refuses to start outside a secure context: plain `http://<LAN IP>` from a phone fails (localhost is fine).
+- On web: online relay only (LAN/IP join + lobby LAN switch hidden, `Network` refuses ENet), no QUIT in the ESC menu.
+  Web has no system fonts: text must be in the kit font (no Cyrillic -> names go through `NetText.player`).
+  Long audio must stream (`playback_type = STREAM`, see `Radio`): web "sample" playback decodes a whole track into one
+  Web Audio buffer and a 2-min track crashed the game loop.
+- `PixelMode`: mobile browsers (`web_android` / `web_ios` feature tags) scale FRACTIONALLY to fill the screen; desktop
+  keeps integer scaling. iPads report as Mac = desktop treatment.
+- `TouchControls` (`scripts/ui/touch_controls.gd`, root CanvasLayer 30, made by `PixelMode.enter`): shown on the first touch
+  (from the start on mobile browsers), hidden by any real keyboard / gamepad press. Floating joystick (left half, rim =
+  run), USE (sits on the cruise HUD action button) + BACK, small MENU / PING / RADAR / HUD / INFO buttons; per-screen
+  layout in `SCREENS` (launch: no stick, STAGE + BACK on the left because the lever owns the bottom-right, REDO after a
+  failure). Everything becomes input actions / key events, so screens need no touch code. Tappable dialogs (tutorial,
+  briefing, ESC menu) hide it; key-only screens get a bottom row of key buttons (report NEXT / MISSIONS / MENU, game over
+  AGAIN / CREDITS / MENU, Codex UP / DOWN / CLOSE; via `takes_input()` on MissionReport / GameOver). Portrait = rotate hint.
+- New screens: keep them tappable (mouse clicks) or add their keys to `TouchControls._find_overlay`.
+
 ## Orbit simulation (shared by planner and cruise)
 - Units AU and days; Sun fixed at origin; Earth/Mars on circles (1.0 AU / 365 d, 1.52 AU / 687 d)
   computed from time, not simulated.

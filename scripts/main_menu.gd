@@ -1,17 +1,17 @@
 extends Control
-## Главное меню: анимированный космос, название игры и кнопки.
+## Main menu: animated space, the game title and buttons.
 
-## «Создать комнату»: создатель комнаты сначала выбирает уровень.
+## "Create room": the host picks a level first.
 @export_file("*.tscn") var create_room_scene: String = "res://scenes/level_select.tscn"
-## «Присоединиться»: подключение к комнате по IP-адресу.
+## "Join": join a room by code or IP address.
 @export_file("*.tscn") var join_scene: String = "res://scenes/join_room.tscn"
-## Экран с описанием персонажей.
+## The crew / characters screen.
 @export_file("*.tscn") var characters_scene: String = "res://scenes/characters.tscn"
 
 const HIGHLIGHT_SCALE := Vector2(1.06, 1.06)
 
-## Длинное интро играется один раз за запуск игры,
-## при возврате в меню — только короткое затемнение.
+## The long intro plays once per game launch;
+## coming back to the menu is just a short fade.
 static var _intro_played := false
 static var _last_focused := 0
 
@@ -29,7 +29,7 @@ var _busy := false
 
 
 func _ready() -> void:
-	# В главном меню игрок точно не в комнате (например, вернулся из уровня).
+	# In the main menu the player is never in a room (e.g. came back from a level).
 	Network.leave_room()
 	_buttons = [_create_button, _join_button, _characters_button]
 	var scenes := [create_room_scene, join_scene, characters_scene]
@@ -68,7 +68,7 @@ func _play_intro() -> void:
 
 
 func _on_button_hovered(button: Button) -> void:
-	# Мышь и клавиатура подсвечивают одну и ту же кнопку.
+	# Mouse and keyboard highlight the same button.
 	if not _busy:
 		button.grab_focus()
 
@@ -82,7 +82,7 @@ func _animate_button(button: Button, highlighted: bool) -> void:
 
 
 func _update_pivot(button: Button) -> void:
-	# Масштабируем от левого края, чтобы кнопка «выезжала» вправо.
+	# Scale from the left edge so the button "slides out" to the right.
 	button.pivot_offset = Vector2(0.0, button.size.y * 0.5)
 
 
@@ -91,7 +91,7 @@ func _open_scene(path: String, focus_index: int) -> void:
 		return
 	_busy = true
 	_last_focused = focus_index
-	# Пока идёт переход, затемнение перехватывает клики мыши.
+	# During the transition the fade swallows mouse clicks.
 	_fade.mouse_filter = Control.MOUSE_FILTER_STOP
 	var tween := create_tween()
 	tween.tween_property(_fade, "color:a", 1.0, 0.3)

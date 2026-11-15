@@ -34,7 +34,7 @@ color = Color(0, 0, 0, 0)
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"RoleLabel"
-text = "УРОВЕНЬ 1"
+text = "LEVEL 1"
 horizontal_alignment = 1
 
 [node name="Title" type="Label" parent="Layout"]
@@ -42,7 +42,7 @@ unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"NameLabel"
 theme_override_font_sizes/font_size = 34
-text = "Название"
+text = "Name"
 horizontal_alignment = 1
 
 [node name="AccentLine" type="ColorRect" parent="Layout"]
@@ -59,7 +59,7 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_constants/line_spacing = 3
 theme_override_font_sizes/font_size = 16
-text = "Описание"
+text = "Description"
 horizontal_alignment = 1
 autowrap_mode = 3
 max_lines_visible = 3

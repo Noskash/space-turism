@@ -554,7 +554,7 @@ func _draw_tag() -> void:
 		top -= 2
 	if display_name == "":
 		return
-	var label := NetText.player(display_name)   # "Игрок 2" -> "PLAYER 2": the pixel font has no Cyrillic (web has no fallback)
+	var label := NetText.player(display_name)   # "Player 2" -> "PLAYER 2"
 	var w := UiKit.text_w(label, 6) + 6
 	var h := maxf(9.0, UiKit.line_h(6) + 2)
 	var r := Rect2(roundf(-w / 2.0), top - h, roundf(w), h)

@@ -1,10 +1,10 @@
 extends Control
-## Экран «О персонажах»: карточки экипажа, которые можно листать.
+## CREW screen: crew cards you can flip through.
 
-## Персонажи на экране. Новых добавляй прямо в инспекторе:
+## Characters on the screen. Add new ones in the inspector:
 ## Characters → Add Element → New CharacterData.
 @export var characters: Array[CharacterData] = []
-## Сцена, в которую возвращает кнопка «Назад».
+## Scene the BACK button returns to.
 @export_file("*.tscn") var menu_scene: String = "res://scenes/main_menu.tscn"
 
 const DEFAULT_ACCENT := Color(0.35, 0.85, 1.0)
@@ -46,7 +46,7 @@ func _ready() -> void:
 			c.description = str(crew[id].bio)
 			c.accent_color = Color(str(crew[id].color))
 			characters.append(c)
-	# Базовые стили берём из темы и для каждого персонажа перекрашиваем их копии.
+	# Base styles come from the theme; each character recolours copies of them.
 	_card_style = _card.get_theme_stylebox("panel") as StyleBoxFlat
 	_portrait_style = _portrait.get_theme_stylebox("panel") as StyleBoxFlat
 	_ring_style = _ring.get_theme_stylebox("panel") as StyleBoxFlat
@@ -95,8 +95,8 @@ func _show_character(index: int) -> void:
 	var data: CharacterData = characters[index] if index < characters.size() else null
 	if data == null:
 		_role.text = ""
-		_name.text = "Экипаж пока пуст"
-		_description.text = "Добавь персонажей в свойство Characters в инспекторе."
+		_name.text = "No crew yet"
+		_description.text = "Add characters to the Characters property in the inspector."
 		_initials.text = "?"
 		_initials.visible = true
 		_image.texture = null

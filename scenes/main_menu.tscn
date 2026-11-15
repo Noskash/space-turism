@@ -60,7 +60,7 @@ text = "SPACE TOURISM"
 unique_name_in_owner = true
 layout_mode = 2
 theme_type_variation = &"SubtitleLabel"
-text = "КОСМИЧЕСКИЙ ТУРИЗМ"
+text = "A CO-OP MISSION TO MARS"
 
 [node name="Spacer" type="Control" parent="Content/VBox"]
 custom_minimum_size = Vector2(0, 56)
@@ -78,20 +78,20 @@ theme_override_constants/separation = 18
 unique_name_in_owner = true
 layout_mode = 2
 focus_neighbor_top = NodePath("../CharactersButton")
-text = "СОЗДАТЬ КОМНАТУ"
+text = "CREATE ROOM"
 alignment = 0
 
 [node name="JoinButton" type="Button" parent="Content/VBox/Buttons"]
 unique_name_in_owner = true
 layout_mode = 2
-text = "ПРИСОЕДИНИТЬСЯ"
+text = "JOIN ROOM"
 alignment = 0
 
 [node name="CharactersButton" type="Button" parent="Content/VBox/Buttons"]
 unique_name_in_owner = true
 layout_mode = 2
 focus_neighbor_bottom = NodePath("../CreateRoomButton")
-text = "О ПЕРСОНАЖАХ"
+text = "MEET THE CREW"
 alignment = 0
 
 [node name="Fade" type="ColorRect" parent="."]

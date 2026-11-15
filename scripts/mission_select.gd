@@ -181,7 +181,7 @@ func _pick() -> void:
 	var data: LevelData = level.duplicate() if level else LevelData.new()
 	data.mission = id
 	data.options = Missions.offline_options.duplicate() if id == Missions.SANDBOX else {}
-	data.title = str(m.title).capitalize()   # the card shows "МАРС · МИССИЯ n" above it
+	data.title = str(m.title).capitalize()   # the card shows "MARS · MISSION n" above it
 	data.description = str(m.tagline)
 	if data.scene == "":
 		data.scene = "res://scenes/design/hangar.tscn"
