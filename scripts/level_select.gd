@@ -65,6 +65,11 @@ func _create_room(data: LevelData, number: int, card: LevelCard) -> void:
 	if _busy:
 		return
 	_last_selected = _cards.find(card)
+	if data.has_missions:   # Mars: pick one of the campaign missions first (it creates the room)
+		MissionSelect.level = data
+		MissionSelect.level_number = number
+		_go_to(MissionSelect.SCENE)
+		return
 	var error := Network.create_room(data, number)
 	if error != OK:
 		_show_notice("Не удалось создать комнату: порт %d уже занят другой программой." \

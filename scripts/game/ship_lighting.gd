@@ -11,7 +11,13 @@ extends Node2D
 ## then two full-screen shaders over everything: light_shade (multiply) and light_glow (add).
 ## Low battery -> red emergency lighting; solar storm -> shimmer from the Sun's side.
 
-const CRUISE_DAYS := 259.0
+const CRUISE_DAYS := 259.0   # sandbox; a campaign mission sends its own state.cruise_days
+
+
+## Share of the transfer flown (0 = Earth, 1 = Mars), from the sim state.
+static func progress_of(state: Dictionary) -> float:
+	var days := float(state.get("cruise_days", 0.0))
+	return float(state.get("day", 0.0)) / (days if days > 0.0 else CRUISE_DAYS)
 const TRANSFER_A := 1.26          # AU, semi-major axis of the Earth -> Mars transfer
 const TRANSFER_E := 0.206
 const SUN_ANGLE_START := deg_to_rad(165.0)   # screen angle (y down): left, slightly below
@@ -90,7 +96,7 @@ func _set_progress(p: float) -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
-	_set_progress(float(_state.get("day", 0.0)) / CRUISE_DAYS)
+	_set_progress(progress_of(_state))
 	var power: float = _state.get("power", 100.0)
 	_emergency = move_toward(_emergency, clampf((22.0 - power) / 14.0, 0.0, 1.0) * 0.55, delta)
 	var storming := false

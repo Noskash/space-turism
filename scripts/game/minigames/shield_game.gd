@@ -11,6 +11,11 @@ signal finished(result: Dictionary)
 const GAUGE := Rect2(110, 150, 260, 14)
 const ARM_TIME := 0.25          # ignore the SPACE press that opened the game
 const LOCKOUT := 0.4
+## What the player sees lags the sim by a frame or two (render + display), and the needle moves
+## several pixels per frame. A press counts if the needle was in the zone at any point this long ago,
+## so "it looked green when I pressed" is always a hit.
+const GRACE := 0.1
+const SPEED_UP := 0.25          # gauge widths/s added per charge
 
 var charges_needed := 3
 var deadline := 15.0            # seconds until the wave (from the ticket)
@@ -28,6 +33,7 @@ var _done := false
 var _outro := 0.0
 var _aborted := false
 var _rng := RandomNumberGenerator.new()
+var _trail: Array[Vector2] = []  # recent needle positions (x = time, y = needle), newest last
 
 
 func _ready() -> void:
@@ -61,7 +67,6 @@ func _process(delta: float) -> void:
 	if _done:
 		_outro += delta
 		if _outro > 0.8:
-			finished.emit({ok = true})
 			queue_free()
 		_canvas.queue_redraw()
 		return
@@ -69,22 +74,52 @@ func _process(delta: float) -> void:
 	if _needle >= 1.0 or _needle <= 0.0:
 		_needle = clampf(_needle, 0.0, 1.0)
 		_dir = -_dir
-	if _t > ARM_TIME and _lock <= 0.0 and Input.is_action_just_pressed(Controls.action("p1", "interact")):
-		if _needle >= _zone.x and _needle <= _zone.y:
-			_charged += 1
-			_flash = 1.0
-			Sfx.play("fixed", 0.9 + _charged * 0.15)
-			if _charged >= charges_needed:
-				_done = true
-				Sfx.play("orbit")
-			else:
-				_speed += 0.35
-				_new_zone()
-		else:
-			_lock = LOCKOUT
-			_flash = -1.0
-			Sfx.play("denied")
+	_trail.append(Vector2(_t, _needle))
+	while _trail.size() > 2 and _trail[0].x < _t - GRACE:
+		_trail.pop_front()
 	_canvas.queue_redraw()
+
+
+## SPACE is handled the moment it arrives (not polled once per frame).
+func _input(event: InputEvent) -> void:
+	if not _done and event.is_action_pressed(Controls.action("p1", "leave")):
+		get_viewport().set_input_as_handled()
+		abort()   # not a failure: the ticket stays, SPACE at the table reopens it
+		return
+	if _done or not event.is_action_pressed(Controls.action("p1", "interact")) or event.is_echo():
+		return
+	get_viewport().set_input_as_handled()
+	if _t <= ARM_TIME or _lock > 0.0:
+		return
+	if _was_in_zone():
+		_charged += 1
+		_flash = 1.0
+		Sfx.play("fixed", 0.9 + _charged * 0.15)
+		if _charged >= charges_needed:
+			_done = true
+			Sfx.play("orbit")
+			finished.emit({ok = true})   # report NOW: the outro is only for show (it used to
+			                             # report 0.8 s later, so a last-second success missed the wave)
+		else:
+			_speed += SPEED_UP
+			_new_zone()
+	else:
+		_lock = LOCKOUT
+		_flash = -1.0
+		Sfx.play("denied")
+
+
+## The needle is in the zone now, or was within the last GRACE seconds (also between two samples:
+## a fast needle can jump over a narrow zone in one frame).
+func _was_in_zone() -> bool:
+	var prev := _needle
+	for p in _trail:
+		var lo := minf(prev, p.y)
+		var hi := maxf(prev, p.y)
+		if hi >= _zone.x and lo <= _zone.y:
+			return true
+		prev = p.y
+	return _needle >= _zone.x and _needle <= _zone.y
 
 
 func _new_zone() -> void:
@@ -93,6 +128,7 @@ func _new_zone() -> void:
 	if absf(a + w / 2.0 - _needle) < 0.2:  # not right under the needle
 		a = fposmod(a + 0.4, 0.92 - w)
 	_zone = Vector2(a, a + w)
+	_trail.clear()   # the old positions belonged to the old zone
 
 
 func _draw_game() -> void:
@@ -103,9 +139,9 @@ func _draw_game() -> void:
 	c.draw_rect(panel, Color("0e1424"))
 	c.draw_rect(panel, Color("4fd8ff"), false, 1.0)
 	var title := "RAISE THE SHIELDS"
-	c.draw_string(font, Vector2(240 - UiFont.width(title, 14) / 2.0, 60), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("4fd8ff"))
+	c.draw_string(font, Vector2(240 - UiFont.width(title, 14) / 2.0, 60), title, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(14), Color("4fd8ff"))
 	var wave := "RADIATION WAVE IN %.1fs" % maxf(deadline, 0.0)
-	c.draw_string(font, Vector2(240 - UiFont.width(wave, 8) / 2.0, 72), wave, HORIZONTAL_ALIGNMENT_LEFT, -1, 8,
+	c.draw_string(font, Vector2(240 - UiFont.width(wave, 8) / 2.0, 72), wave, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(8),
 			Color("ffe14a") if fmod(_t, 0.5) < 0.35 or deadline > 4.0 else Color("ff5050"))
 
 	# The ship with its shield bubble filling up charge by charge.
@@ -146,7 +182,7 @@ func _draw_game() -> void:
 	c.draw_rect(Rect2(nx - 1, GAUGE.position.y - 4, 3, GAUGE.size.y + 8), Color("ff5050") if _lock > 0.0 else Color.WHITE)
 
 	var hint := "PRESS SPACE IN THE GREEN ZONE" if not _done else "SHIELDS UP!"
-	c.draw_string(font, Vector2(240 - UiFont.width(hint, 10) / 2.0, 190), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 10,
+	c.draw_string(font, Vector2(240 - UiFont.width(hint, 10) / 2.0, 190), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(10),
 			Color("5cf07a") if _done else Color.WHITE)
-	var sub := "CAPACITORS %d / %d · SIMPLIFIED" % [_charged, charges_needed]
-	c.draw_string(font, Vector2(240 - UiFont.width(sub, 7) / 2.0, 204), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color("6b7390"))
+	var sub := "CAPACITORS %d / %d · Q STEP AWAY · SIMPLIFIED" % [_charged, charges_needed]
+	c.draw_string(font, Vector2(240 - UiFont.width(sub, 7) / 2.0, 204), sub, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(7), Color("6b7390"))

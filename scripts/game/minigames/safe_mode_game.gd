@@ -69,11 +69,13 @@ func _process(delta: float) -> void:
 	if _done:
 		_outro += delta
 		if _outro > 0.8:
-			finished.emit({ok = true})
 			queue_free()
 		_canvas.queue_redraw()
 		return
 	if _t > ARM_TIME:
+		if Input.is_action_just_pressed(Controls.action("p1", "leave")):
+			abort()   # not a failure: the ticket stays, SPACE at the station reopens it
+			return
 		if Input.is_action_just_pressed(Controls.action("p1", "left")):
 			_cursor = wrapi(_cursor - 1, 0, _names.size())
 			Sfx.play("select")
@@ -96,6 +98,8 @@ func _flip() -> void:
 		if _next >= _order.size():
 			_done = true
 			Sfx.play("brownout", 1.4)
+			finished.emit({ok = true})   # report NOW: the outro is only for show (it used to
+			                             # report 0.8 s later, so a last-second success missed the wave)
 	else:
 		_lock = LOCKOUT
 		_flash = -1.0
@@ -152,9 +156,9 @@ func _draw_game() -> void:
 	var hint := "SAFE MODE ON - SHIP POWERED DOWN" if _done else (
 			"WRONG BREAKER!" if _lock > 0.0 else "CUT THE BLINKING BREAKER: A/D MOVE · SPACE FLIP")
 	_centered(hint, 240 + off.x, 182, 9, Color("5cf07a") if _done else (Color("ff5050") if _lock > 0.0 else Color.WHITE))
-	_centered("BREAKERS %d / %d · SIMPLIFIED" % [_next, n], 240 + off.x, 198, 7, Color("6b7390"))
+	_centered("BREAKERS %d / %d · Q STEP AWAY · SIMPLIFIED" % [_next, n], 240 + off.x, 198, 7, Color("6b7390"))
 
 
 func _centered(text: String, cx: float, y: float, size: int, col: Color) -> void:
 	_canvas.draw_string(UiFont.font(), Vector2(roundf(cx - UiFont.width(text, size) / 2.0), y), text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+			HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(size), col)

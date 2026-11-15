@@ -1,0 +1,25 @@
+{
+  "_note": "Fictional astronauts, one per crew role (CLAUDE.md 'Crew roles'). 'commander' flies solo and covers every station. Doses in mSv; numbers are SIMPLIFIED but based on real measurements (see dose_facts).",
+  "astronauts": {
+    "navigator": {"name": "Kai Okafor", "role": "Navigator", "color": "4fd8ff",
+                  "bio": "Former test pilot. Plans every burn twice and counts the fuel three times."},
+    "engineer":  {"name": "Mira Petrova", "role": "Flight Engineer", "color": "ff9a3c",
+                  "bio": "Keeps the power bus alive. Has rewired a solar array in a spacesuit - in training."},
+    "comms":     {"name": "Tomas Reyes", "role": "Communications", "color": "5cf07a",
+                  "bio": "Ex Deep Space Network operator. Knows when Goldstone, Madrid and Canberra can hear us."},
+    "scientist": {"name": "Dr. Lena Sato", "role": "Space Physicist", "color": "c07cff",
+                  "bio": "Radiation researcher. Wants the data MARIE started collecting: how much dose a Mars crew really takes."},
+    "commander": {"name": "Sam Hale", "role": "Commander", "color": "e8e8e8",
+                  "bio": "Flies solo this time: every station is theirs. Calm under alarms."}
+  },
+  "dose": {
+    "per_day": 1.8,
+    "storm_outside": 150,
+    "storm_big_outside": 250,
+    "storm_sheltered": 10,
+    "sick_at": 500,
+    "nasa_limit": 600,
+    "sick_slowdown": 0.75
+  },
+  "dose_facts": "Curiosity's RAD measured about 1.8 mSv per day during its 2011-2012 cruise to Mars. NASA's career limit for astronauts is 600 mSv. Orion crews shelter from solar storms in a cramped space walled with stowage bags."
+}

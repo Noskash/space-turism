@@ -27,6 +27,15 @@ func setup(data: LevelData, number: int) -> void:
 	_number.text = "УРОВЕНЬ %d" % number
 	_title.text = data.title
 	_description.text = data.description
+	# Campaign mission (lobby): "МАРС · МИССИЯ 1" on top, the mission name as the title.
+	var mission: Dictionary = Missions.mission(data.mission) if data.mission != "" else {}
+	if not mission.is_empty():
+		_number.text = "МАРС · МИССИЯ %d" % int(mission.number)
+		_title.text = str(mission.title).capitalize()
+	# Long titles wrap and shrink instead of stretching the card past its width.
+	_title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if _title.text.length() > 9:
+		_title.add_theme_font_size_override("font_size", 26 if _title.text.length() <= 16 else 22)
 	_accent_line.color = data.accent_color
 	_number.add_theme_color_override("font_color", data.accent_color)
 

@@ -86,6 +86,12 @@ func tune_loop(sound: String, volume_db: float, pitch := 1.0) -> void:
 		player.pitch_scale = maxf(pitch, 0.05)
 
 
+## Freeze / resume every loop (the pause menu pauses the whole game).
+func pause_loops(on: bool) -> void:
+	for player: AudioStreamPlayer in _loops.values():
+		player.stream_paused = on
+
+
 func is_looping(sound: String) -> bool:
 	return _loops.has(sound)
 

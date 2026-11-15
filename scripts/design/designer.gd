@@ -30,6 +30,7 @@ const SHORT_NAMES := {
 	"spectrometer": "Spectrometer", "radar_sounder": "Radar sounder",
 	"thermal_imager": "Thermal imager", "magnetometer": "Magnetometer",
 	"rad_shielding": "Rad shielding", "particle_monitor": "Particle mon.",
+	"whipple_shield": "Whipple shield",
 }
 const CLASS_HINTS := {
 	"light": "Cheap and light. Few slots. Suits the FAST path.",
@@ -98,6 +99,17 @@ func _ready() -> void:
 			_client_ready.rpc_id(1)
 	_apply_design(design, {})
 	PauseMenu.attach(self, "LEAVE TO MAIN MENU")
+	# Campaign mission: the briefing comes first (once per mission), then the designer tutorial.
+	var id := Missions.current_id()
+	if id != "" and not MissionBriefing.was_shown(id):
+		var briefing := MissionBriefing.attach(self)
+		briefing.open.call_deferred()
+		briefing.closed.connect(_attach_tutorial, CONNECT_ONE_SHOT)
+	else:
+		_attach_tutorial()
+
+
+func _attach_tutorial() -> void:
 	Tutorial.attach(self, "designer", [
 		{title = "Build your spacecraft", rect = Rect2(6, 16, 164, 132),
 		 body = "Together you design ONE ship. Every part costs mass, power AND budget - there is no free upgrade."},
@@ -107,6 +119,8 @@ func _ready() -> void:
 		 body = "Mass, power, budget and slots are shared by the whole crew. A heavier ship needs a bigger, pricier rocket. Negative power is allowed - the battery will drain in flight."},
 		{title = "Part card", rect = Rect2(306, 16, 168, 132),
 		 body = "Shows what the part under your cursor does and what it costs. Fixing one problem usually creates another."},
+		{title = "Mars orbit", rect = Rect2(4, CATALOG_Y + 13 + 3 * ROW_H, COL_W - 3, ROW_H),
+		 body = "Pick where the ship will orbit Mars. A low orbit sees more but needs a big brake burn; a high oval one is cheap to reach and talks to Earth longer. The report shows what each orbit achieved."},
 		{title = "Ready", rect = Rect2(4, 152, 92, 96),
 		 body = "When everyone is READY and the ship has no errors, you go to the launch pad. Any change un-readies everyone."},
 	])
@@ -175,7 +189,7 @@ func _can_use_column(peer: int, col: int) -> bool:
 
 func _column_items(col: int) -> Array:
 	if col == 0:
-		return ["class:light", "class:balanced", "class:heavy", "ready"]
+		return ["class:light", "class:balanced", "class:heavy", "orbit", "ready"]
 	return DesignRules.upgrades_for_role(COLUMNS[col].id)
 
 
@@ -199,6 +213,9 @@ func _use(item: String) -> void:
 		Sfx.play("ui_click")
 	elif item.begins_with("class:"):
 		action = {type = "class", id = item.trim_prefix("class:")}
+		Sfx.play("toggle")
+	elif item == "orbit":
+		action = {type = "orbit", id = Orbits.next_id(Orbits.id_of(design))}
 		Sfx.play("toggle")
 	else:
 		var reason := DesignRules.check_add(design, item)
@@ -233,6 +250,8 @@ func _host_apply(peer: int, action: Dictionary) -> void:
 		"class":
 			if str(action.get("id", "")) in DesignRules.class_ids():
 				new_design = DesignRules.set_class(design, action.id)
+		"orbit":
+			new_design = DesignRules.set_orbit(design, str(action.get("id", "")))
 		"ready":
 			if new_ready.get(peer, false):
 				new_ready.erase(peer)
@@ -388,6 +407,9 @@ func _draw_stats(r: Rect2, ev: Dictionary) -> void:
 		var usable := float(launcher.capacity_kg) * DesignRules.LIFT_MARGIN
 		_text(Vector2(x, y), "MARGIN %d%%  $%dM" % [roundi((1.0 - ev.mass / float(launcher.capacity_kg)) * 100.0), launcher.cost],
 				Color("ffc640") if ev.mass > usable * 0.95 else DIM)
+	if Missions.current_id() != "":   # campaign: the cruise ends with the Mars brake burn
+		y += 11
+		_text(Vector2(x, y), "MARS BRAKE: %d%% FUEL" % ceili(Orbits.moi_fuel(design)), Color("4fd8ff"))
 
 
 ## Details of whatever the local cursor is on.
@@ -411,6 +433,8 @@ func _draw_detail(r: Rect2) -> void:
 		y = _wrapped(Vector2(x, y + 4), CLASS_HINTS.get(id, ""), width, Color.WHITE)
 		var status := "SELECTED" if design.ship_class == id else "SPACE: SWITCH"
 		_text(Vector2(x, r.end.y - 6), status, GOOD if design.ship_class == id else DIM)
+	elif item == "orbit":
+		_draw_orbit_detail(r)
 	elif item == "ready":
 		_text(Vector2(x, y), "READY TO LAUNCH?", Color.WHITE)
 		y = _wrapped(Vector2(x, y + 13), "Launch when every crew member is READY. Any change to the ship un-readies everyone.", width, DIM)
@@ -446,6 +470,33 @@ func _draw_detail(r: Rect2) -> void:
 			status = "NOT YOUR STATION"
 			col = DIM
 		_text(Vector2(x, r.end.y - 6), status, col)
+
+
+## The Mars orbit card: what the brake costs THIS design, what the orbit gives, the trade-off.
+func _draw_orbit_detail(r: Rect2) -> void:
+	var x := r.position.x + 5
+	var y := r.position.y + 11
+	var width := r.size.x - 10
+	var id := Orbits.id_of(design)
+	var o := Orbits.info(id)
+	_text(Vector2(x, y), "MARS ORBIT: %s" % str(o.get("name", "")), Color.WHITE)
+	y += 10
+	_text(Vector2(x, y), str(o.get("shape", "")), DIM)
+	y += 12
+	_text(Vector2(x, y), "BRAKE AT MARS: %d%% OF THE TANK" % ceili(Orbits.moi_fuel(design)), Color("4fd8ff"))
+	y += 10
+	_text(Vector2(x, y), "SCIENCE x%s  EARTH CONTACT x%s" % [str(o.get("science_mult", 1)), str(o.get("contact_mult", 1))], DIM)
+	y += 10
+	var delay := Orbits.delay_years(design)
+	var life := "DRAG %d%% FUEL / MARS YEAR" % int(o.get("drag", 0))
+	if delay > 0.0:
+		life += "  WAIT %d MO" % roundi(delay * Orbits.MONTHS_PER_YEAR)
+	_text(Vector2(x, y), life, DIM)
+	if Orbits.favoured(id):
+		y += 10
+		_text(Vector2(x, y), "SUITS THIS MISSION: +%d%% SCIENCE" % roundi((Orbits.FAVOURED - 1.0) * 100.0), GOOD)
+	_wrapped(Vector2(x, y + 12), str(o.get("desc", "")), width, DIM)
+	_text(Vector2(x, r.end.y - 6), "SPACE: NEXT ORBIT (SIMPLIFIED)", Color.WHITE)
 
 
 func _draw_catalog(ev: Dictionary) -> void:
@@ -492,6 +543,9 @@ func _draw_item(item: String, at: Vector2, usable: bool, accent: Color) -> void:
 		var id := item.trim_prefix("class:")
 		on = design.ship_class == id
 		label = str(DesignRules.class_info(id).get("name", id))
+	elif item == "orbit":
+		on = true
+		label = "Orbit: " + str(Orbits.info(Orbits.id_of(design)).get("short", ""))
 	elif item == "ready":
 		on = ready_by.get(_me, false)
 		label = "READY" if not on else "READY!"
@@ -528,7 +582,7 @@ func _draw_footer(ev: Dictionary) -> void:
 		if id == _me:
 			text = "> " + text
 		_text(Vector2(x, 260), text, GOOD if ready_by.get(id, false) else CrewRoles.color(roles[id]))
-		x += _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x + 12
+		x += _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x + 12
 	_text_right(Vector2(472, 260), "WASD move · SPACE pick · ESC menu", DIM)
 
 
@@ -553,11 +607,11 @@ func _bar(r: Rect2, fill: float, color: Color) -> void:
 
 
 func _text(pos: Vector2, text: String, color: Color) -> void:
-	draw_string(_font, pos.round(), text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, color)
+	draw_string(_font, pos.round(), text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE), color)
 
 
 func _text_right(pos: Vector2, text: String, color: Color) -> void:
-	var w := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
+	var w := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x
 	_text(Vector2(pos.x - w, pos.y), text, color)
 
 
@@ -567,7 +621,7 @@ func _wrapped(pos: Vector2, text: String, width: float, color: Color) -> float:
 	var y := pos.y
 	for word in text.split(" "):
 		var trial := word if line == "" else line + " " + word
-		if line != "" and _font.get_string_size(trial, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x > width:
+		if line != "" and _font.get_string_size(trial, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x > width:
 			_text(Vector2(pos.x, y), line, color)
 			y += 9
 			line = word

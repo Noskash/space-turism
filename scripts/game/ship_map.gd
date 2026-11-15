@@ -54,6 +54,15 @@ func station_at(point: Vector2) -> Station:
 	return best
 
 
+## Room id ("cargo", "bridge", ...) at a point (feet position), or "" in a door / corridor.
+## Grown a little: the layout rects are the walkable floor, the feet can touch the edge.
+func room_at(point: Vector2) -> String:
+	for room: Dictionary in layout.get("rooms", []):
+		if _rect(room).grow(6).has_point(point):
+			return str(room.get("id", ""))
+	return ""
+
+
 func station_for_role(role: String) -> Station:
 	for station in stations:
 		if station.role == role:

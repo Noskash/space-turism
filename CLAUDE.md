@@ -72,7 +72,13 @@ Flow: level select → lobby → **Designer** → cruise (`game.tscn`). Mars' Le
 
 ## Launch mini-game (built 2026-11-14, `scenes/launch/launch.tscn`)
 Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled on screen).
-- W/S push/pull a throttle lever (stays put). Co-op: throttle = AVERAGE of all players' levers.
+- MOUSE drags a heavy throttle lever on a pivot (stays put; W/S nudge as fallback). Feel = spring to the hand + damping +
+  10% notch detents + end-stop thud (`LEVER_K/DAMP/DETENT/MAX_V`); a ghost knob shows the hand while it lags.
+  Co-op: throttle = AVERAGE of all players' levers.
+- Pixel look: the world is drawn 1:1 into a 496x286 SubViewport (`_w`, `_draw_world`) over `shaders/launch_sky.gdshader`
+  (dithered banded sky, pixel Sun, stars), shown Nearest with `shaders/launch_post.gdshader` (cruise-style light model,
+  dithered: sun-side shade, vignette, engine flame + pad floodlight pools, max-Q red edges, explosion flash). Shake moves
+  the view sprite in whole pixels. UI layer (text, pixel-drawn lever quadrant) stays crisp.
 - Thrust/weight from ship mass vs rocket capacity (`DesignRules.evaluate`): heavy ships need more lever to lift off.
 - Max-Q = dynamic pressure (speed² × air density). Over the limit, STRESS builds: 75% = strained (+1 damage),
   100% = **breakup → launch failed**. Fast/light rockets must throttle down; slow heavy ones barely reach max-Q.
@@ -83,8 +89,17 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
 - Result `{fuel_left, damage}` → `DesignRules.chosen.launch` → cruise starts with that fuel, and one station
   OFFLINE (repair ticket) per damage hit.
 - Rocket sprites: light = electron, medium = zenit, heavy = proton (`sprites/rockets`). Host runs the flight.
+- PLAYTEST: "SKIP LAUNCH [F2]" button (top right, host/offline) -> cruise with full tank, no damage.
 - Staging window: after stage 1 burnout, SPACE within 6 s (`STAGE_WINDOW`; beeps speed up after 75%). Missed ->
   rocket falls back, parachute at 3 km, lands -> **launch failed** (same SPACE / D options).
+- Never passing the LIFT mark until stage 1 is empty = **"NOT ENOUGH THRUST - NEVER LEFT THE PAD"** (own failure).
+- **Failure report** (`scripts/launch/launch_report.gd`, `LaunchReport`): the host records the flight (`flight.time, thrust_dv,
+  gravity_dv, pad_fuel, thr_sum/powered_time, peak_q(+alt/speed/thr), meco_alt/speed, max_alt/speed/thr` + a `[t, alt, speed, q,
+  throttle]` log); `_fail` packs `flight.report` (<= 40 samples) so every peer draws it. Fades in 1.4 s after the failure:
+  graph (q vs LIMIT / speed vs ORBIT / altitude with STAGE 1 EMPTY / throttle vs LIFT), WHAT HAPPENED (this flight's numbers),
+  THE PHYSICS (dynamic pressure / rocket equation + gravity loss / dead mass / thrust-to-weight), HOW TO FIX IT (picked from
+  pad fuel, average throttle, coasting, lift margin), REAL (Shuttle 65-72% throttle bucket; rockets ~85-90% fuel; LEO needs
+  ~9.4 km/s for 7.8 km/s). Codex: `dynamic_pressure`, `rocket_equation`, `gravity_loss`, `thrust_to_weight`.
 
 ## Space weather (built 2026-11-15, in `fake_mission.gd`; port to Mission.gd later)
 - **Solar radiation storm** (solar particle event): first ~24 s, then every 42-58 s. Warning (siren + banner):
@@ -93,21 +108,44 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
   - **Radiation shielding bought** (PWR upgrade, 50 kg, `shields: 1`): ticket kind "shields", role "team"
     (Mission Hub holo-table, anyone). SPACE opens `ShieldGame` (`scripts/game/minigames/shield_game.gd`): a needle
     sweeps a gauge, SPACE in the green zone charges a capacitor (3; rad-hard CPU -> 2; each charge = faster
-    needle, smaller zone; miss = 0.4 s lockout). Success -> `cme.shields = true` (bubble around the hull) ->
+    needle, smaller zone; miss = 0.4 s lockout). SPACE read in `_input`; a press counts if the needle was in
+    the zone within the last 0.1 s (`GRACE`, covers render/display lag). Success -> `cme.shields = true` (bubble around the hull) ->
     wave is harmless + bonus storm science.
   - **No shielding**: ticket kind "safe_mode", role "engineer". SPACE opens `SafeModeGame`
     (`minigames/safe_mode_game.gd`): a row of breakers, cut the blinking one each time (A/D move, SPACE flip;
     random order; wrong one = 0.5 s lockout; 4 breakers, rad-hard CPU -> 3) -> `cme.safe = true`: all loads off
     and locked until the wave has passed (no science, no downlink), but no damage.
+  - After safe mode or a blackout: engineer ticket **"power_up"** (20 s × pace, hold 2 s) = instruments + transmitter
+    back ON in one go (real: one safe-mode recovery sequence). Missed = nothing breaks, loads stay off (switch by hand;
+    doing that also clears the ticket). Comms panel says "TRANSMITTER OFF" and the sim warns when the recorder is >70%
+    with the transmitter off.
   - Neither done when the wave (6 s) hits = **ship disabled**: blackout 10 s (solar bus tripped, loads off,
     -15% battery; only `storm_proof_w` = RTG still generates), Engine room + one random station offline.
+    35% chance (`METEOR_CHANCE`) a meteoroid hits during the blackout (`state.meteor {time_left, y, seq}`): shown
+    flying in for 2.5 s (proximity alarm, banner), then crash = flash, heavy shake, crunch sounds, debris; -6% fuel,
+    -5% battery, one more station offline.
 - **Comet debris** (real: comet trails; hard rule #3 kept, it is labelled comet debris): first ~50 s, then every
-  45-60 s. Warning 7 s (+4 star tracker), then phase "stream" waits up to 8 s for a pilot. The Navigator docked
+  45-60 s. Warning 12 s (+4 star tracker). **Bridge radar** (`scripts/game/radar_screen.gd`, E toggles it while
+  docked at the Bridge; E is no longer an interact key): the cloud closes in ahead, dotted projected path. A/D = course burn (fuel, 5 degrees each; cloud half-width 0.3 so 1-2 burns clear it; the cloud is on the
+  scope for the whole warning with its extent band + the ship's corridor drawn,
+  `dust.course` vs `dust.cloud_y/cloud_w`). The choice: burn fuel now and steer clear (cloud passes, no risk), or
+  save it and fly through. Partly clear = `dust.density` 0.3..1 (thinner field, fewer unpiloted hits).
+  Then phase "stream" waits up to 8 s for a pilot. The Navigator docked
   at the Bridge gets `DodgeGame` (`minigames/dodge_game.gd`): FULL SCREEN, Spacewar-style (A/D turn, W thrust,
-  S brake, screen wraps, no guns), 6 s, rocks fly in from the edges faster and faster. Runs on the pilot's
+  S brake, screen wraps, no guns), 6 s, rocks fly in from the edges faster and faster. Ship MASS from the design sets
+  the feel (light = quick + small, heavy = sluggish, bigger, knocked around less); hull % shown. Runs on the pilot's
   machine: `dodge_start` -> phase "flying" -> `dodge_result {hits, thrust, turning}`. No pilot = 3 hits.
   Each hit: random station offline or -8% fuel. Reaction wheels: faster turning, turning costs no fuel.
   Star tracker: earlier warning + red edge chevrons before rocks fly in. While flying, no downlink.
+- **Hull + oxygen** (`fake_mission` `_impact`, `scripts/game/hull_damage.gd`): every debris / meteoroid hit wears
+  `state.hull` (damage per hit = class `hull_hit`: light 16 / balanced 12 / heavy 9; Whipple shield (NAV part) halves
+  it and cuts breaches). Breach chance per hit = 0.15 + 0.8 x wear. A breach = hole on the map venting air
+  (`state.breaches [{id,x,y}]`); each drains O2 1.4 %/s, sealed ship refills 0.6 %/s. Toolboxes: red lockers in Cargo
+  (386,240) + Engine Room (132,226), SPACE take/return (synced in the crew snapshot); SPACE anywhere else drops it
+  on the floor (`state.toolboxes`, actions drop_tool / take_tool), anyone picks it up; HOLD SPACE on a hole 2.5 s ->
+  `{type = "patch", id}` (+3 hull). O2 0 -> `state.lost` -> the ship explodes (Vfx chain of blasts, 2.6 s), then
+  `GameOver` (`scripts/game/game_over.gd`) grabs the frame, breaks it into shards drifting apart, then the panel.
+  HUD: HULL + O2 bars under the tickets.
 - Minigames are CanvasLayers (layer 15) that call `Tutorial.hold()` so crew/station input is off meanwhile.
 - State: `cme {phase, time_left, duration, shielding, shields, safe}`, `blackout`,
   `dust {phase, time_left, hits, wheels, tracker}`.
@@ -116,6 +154,91 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
   reaction_wheels `steer_free: 1` -> `DesignRules.mission_params`. New part art: `draw_upgrades.py` (19 upgrades).
 - Visuals: HUD banner, wave band sweeping from the Sun, blackout darkness, shield bubble, debris grains
   outside the hull, hull impact sparks; sounds siren / wave / impact / static.
+
+## Mars campaign (built 2026-11-15) — framing A: a future crewed NASA mission re-flying real robot missions
+Flow: level select → **Mars card** (`LevelData.has_missions`) → **MissionSelect** (`scenes/mission_select.tscn`, all open,
+best stars) → room created with a LevelData copy whose `mission` id is set (synced to every peer in the room info) →
+lobby → designer (**MissionBriefing** first, once per mission) → launch → cruise → **MOI** → **MissionReport**.
+- `data/missions.json` (numbers = first guesses, a perfect bot gets 3 stars; tune with humans), read by `Missions`
+  (`scripts/missions.gd`, static: `current_id()`, `sim()`, `goals(state)`, `stars`, best stars in `user://campaign.cfg`).
+  No mission id = sandbox (every hazard on, endless cruise) — tests rely on it.
+  | # | Mission (NASA) | Goals (1 star each) | Hazards / twist | Off |
+  |---|---|---|---|---|
+  | 1 | Radiation Scout (Mars Odyssey 2001, MARIE) | record 3 storms · send 40 · orbit | storms every ~20 s, Halloween-class storm at 70% | debris, hull |
+  | 2 | Data Firehose (MRO 2005, HiRISE) | send 120 · lose < 25 · orbit | 2.4× science windows, solar conjunction at 62% | hull |
+  | 3 | Thin Air (MAVEN 2013) | record 2 storms · send 80 · orbit | everything incl. breaches + O2 | — |
+- Sim (`fake_mission.gd`): `_sim` flags `storms / debris / hull`, `storm_first/gap`, `debris_first/gap`, `science_weight`,
+  `fault_weight`, `big_storm_at`, `conjunction_at`, `moi_fuel`; cruise length = `cruise_days` over `cruise_seconds`.
+  State adds `mission, cruise_days, storms_recorded, conjunction{phase,time_left}, moi{phase}, finished{outcome,stars,...},
+  stats{storms, safe_modes, disabled, knockouts, debris_hits, breaches, big_storm, fuel_at_moi}`.
+  - **Storm reading** = instruments ON + lab online as the wave hits. Safe mode turns them off (safe, no reading);
+    no shielding + no safe mode = reading but the ship is disabled; shielding = both. That is the Odyssey lesson.
+  - **Halloween storm**: +6 s warning, 1.5× wave, +1 breaker/charge; unprotected also fries the Science Lab (like MARIE).
+  - **Solar conjunction**: 15 s warning, then 16 s with no DSN/downlink (SIMPLIFIED, really ~2 weeks).
+  - **MOI**: at `cruise_days` (day stops there) a navigator ticket `moi` (22 s, hold 4 s). Needs ≥10% battery (else refused,
+    ticket stays) and `moi_fuel` (else flyby). Timer runs out = miss. No new hazards after 92% of the cruise.
+  - Hull off: `_impact` never breaches, no O2 tick, lockers hidden (`HullDamage.enabled()`), HULL/O2 bars hidden.
+- HUD: goal line under the top bar (`GOALS [x] STORMS 1/3 [ ] SENT 12/40 [ ] MARS: DAY 80/200`), toast moved to y 46 with
+  a dark strip; banners for MOI and conjunction. `ShipLighting.progress_of(state)` uses the mission's cruise length.
+- **Score** (`Missions.score`): 100 per star + 2 per unit of **BONUS DATA** (science sent beyond the SENT goal; counts on
+  flyby/miss too, lost ship = 0). Goal line shows "SENT 40/40 +12 BONUS"; report shows SCORE + NEW BEST; best score
+  in `campaign.cfg [score]`, shown as "N PTS" on the mission picker cards.
+- Storm minigames report success the instant the last charge/breaker lands (the 0.8 s outro is cosmetic), and their
+  countdown is resynced from the ticket on every state update.
+- **MissionReport** (`scripts/game/mission_report.gd`): result + stars + goals + "why it went this way" (from stats) →
+  "What NASA actually did" card (+ Mars Climate Orbiter card after a miss/flyby). Host: SPACE fly again (RPC to all),
+  M other mission, ESC menu.
+- **Codex** (`scripts/ui/codex.gd`, `data/codex.json`, 26 terms): J or ESC menu → CODEX. Terms unlock from briefing pages,
+  first events (`EventGuide.TERMS`) and the report; NEW markers; `user://codex.cfg`. Attached by `PauseMenu.attach`.
+- **Briefing** (`scripts/ui/briefing.gd`): pages from the JSON ("GOALS" body = generated goal list), ESC menu
+  MISSION BRIEFING reopens it. EventGuide gained `conjunction` and `moi` walkthroughs.
+- Facts on screen were checked against NASA/JPL sources (dates, MARIE Oct 28 2003, MRO 3 m dish / HiRISE ~1 m, MAVEN
+  ~100 g/s, MCO unit mix-up ~$125M orbiter). Keep new facts sourced.
+
+## Sandbox (built 2026-11-15) — NASA brief: "a sandbox mode to experiment without predefined constraints"
+- 4th card on MissionSelect (cards now 110 px wide). `missions.json` top-level `"sandbox"` (not in `order`; `Missions.SANDBOX`,
+  `Missions.mission("sandbox")`): `budget_mult` 2 (DesignRules.evaluate budget), no goals/stars, cruise 259 d -> MOI -> report,
+  one briefing page, NASA card = trade studies (Mission Design Lab).
+- Hazard switches on the card (W/S + SPACE, or click; ENTER / FLY row = go): storms, debris, hull+O2 (default off), conjunction.
+  Stored in `Missions.offline_options` -> `LevelData.options` (room info, synced) -> `Missions.sim()` lays them over the sandbox
+  block (`fake_mission.start` now reads `Missions.sim()`). Report: "SANDBOX REPORT", HAZARDS FLOWN instead of goals, score =
+  ALL data sent (`bonus_data` with no SENT goal) + orbit + healthy crew.
+- `Missions.current_id()` in a room now always returns the room's mission (was: fell back to a stale `offline_id` when "").
+  The old mission id "" (endless cruise, every hazard) still exists for tests.
+
+## Mars orbit choice (built 2026-11-15) — NASA brief: "several orbital options and explain them"
+- Designer SHIP column row "Orbit: X" (shared, SPACE cycles, un-readies everyone) -> `design.orbit`
+  (`DesignRules.set_orbit`, host action `{type = "orbit", id}`). Data `data/orbits.json`, logic `Orbits` (`scripts/orbits.gd`, static).
+  | Orbit | Brake fuel | Science | Earth contact | Drag (fuel %/Mars yr) | Catch |
+  |---|---|---|---|---|---|
+  | LOW POLAR | x1.5 | x1.5 | x0.6 | 8 | big brake, downlink-starved without a dish |
+  | HIGH ELLIPTICAL (default) | x0.7 | x0.6 | x1.4 | 2 | little science, long life |
+  | AEROBRAKE | x0.8 | x1.5 | x0.6 | 8 | 0.6 Mars yr wait (radiator -0.25, large solar -0.15) |
+- MOI need = `Orbits.moi_fuel(design)` = mission `moi_fuel` x orbit x `moi_mult` (large tank 0.5). Shown in the designer stats.
+- After the game ends in orbit: `Orbits.result(state)` (SIMPLIFIED) = lifetime (fuel left / drag, max 3 Mars yrs, minus aerobrake
+  wait) x min(observed/yr = science x 2 x orbit x mission fit 1.3 x power-starved 0.7, radio/yr = downlink x contact x 5 x recorder).
+  Report page **IN MARS ORBIT** (lifetime bar, observed vs radio bars, bottleneck, why). 1 point per unit (`finished.orbit_science`).
+- Each mission's `favoured_orbit` (Odyssey/MRO low, MAVEN elliptical) + an orbit tip in its Design tips page; Codex
+  `polar_orbit`, `elliptical_orbit`, `aerobraking`. Facts: Odyssey 77 days / 332 passes to ~400 km; MRO ~5 months; MAVEN 150 x 6,200 km.
+
+## Astronauts + radiation dose (built 2026-11-15)
+- `data/astronauts.json` + `Astronauts` (`scripts/astronauts.gd`): fictional astronauts, one per role (Kai Okafor NAV,
+  Mira Petrova PWR, Tomas Reyes COM, Dr. Lena Sato SCI; solo = Commander Sam Hale). Crew role -> astronaut
+  (`id_for_role`, first role of a split). The main-menu characters screen now shows this roster.
+- Sim: `state.crew[key] = {astronaut, dose, sick, room}`, key = crew node name ("P1" / "Crew_<peer>"). The game (host)
+  calls `set_crew(roster)` after start and writes `crew_rooms` (via `ShipMap.room_at`) every frame; the sim can't see the map.
+- Dose (SIMPLIFIED, sourced): 1.8 mSv per cruise day (Curiosity RAD); storm wave: shields up or in **Cargo (storm
+  shelter, like Orion)** = +10, outside = +150 (Halloween +250). >= 500 = radiation sickness: walk + station work x0.75
+  (`CrewMember.sick`, set on every peer from state). NASA career limit 600 mSv shown on bars.
+- No shielding = storm warning +6 s (`SHELTER_EXTRA_WARN`) so the Engineer can do safe mode AND everyone reach Cargo.
+  Banner "EVERYONE TO CARGO", `CrewPanel` (bottom left: dose bars, SHELTER/OUTSIDE during the warning), safe-mode
+  walkthrough has a shelter pane + step.
+- Cascade: a debris hit that breaches nothing has a 30% chance (`LEAK_CHANCE`) of a `fuel_leak` navigator ticket with no
+  timer, draining 0.45 %/s until sealed (hold 2.5 s) -> can turn the Mars brake burn into a flyby. Report explains it.
+- Score adds +50 per astronaut without sickness (`Missions.HEALTHY_POINTS`); report has a CREW page (doses vs 600 mSv).
+- Codex: `radiation_dose`, `storm_shelter`. Odyssey briefing ties MARIE to the crew's dose bars.
+- Bot runs (Odyssey): sheltered crew ends ~390-400 mSv (healthy); always outside = sick after the 2nd-3rd storm.
+- Game user data lives in `%APPDATA%/Godot/app_userdata/Space turism/` (project name), not `space_dick/`.
 
 ## Radio (`scripts/game/radio_set.gd` object + `scripts/game/radio.gd` audio)
 - A boombox on the Mission Hub bench (RadioSet, use point 308,158). Walk up, SPACE = on/off
@@ -126,9 +249,12 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
 
 ## ESC menu (`scripts/ui/pause_menu.gd`, class `PauseMenu`)
 - `PauseMenu.attach(scene, leave_text)` on designer / launch / cruise: RESUME, HOW TO PLAY, SOUND (Master bus,
-  saved in `user://settings.cfg`), FULLSCREEN, LEAVE (press twice), QUIT (press twice).
-- Offline it pauses the tree; in co-op the mission keeps running and only local input is blocked
-  (`Tutorial.hold()` shares the tutorial's input gate). Tutorial + PauseMenu + Sfx run with PROCESS_MODE_ALWAYS.
+  saved in `user://settings.cfg`), TEXT SIZE (NORMAL / LARGE ×1.15 / HUGE ×1.3), FULLSCREEN, LEAVE (press twice), QUIT (press twice).
+- TEXT SIZE: every `draw_string` size goes through `UiFont.px(size)`; `UiFont.width()` and `UiFont.label()` scale too
+  (labels resize live via group `ui_font_label`). New hand-drawn text must use `UiFont.px()` for the size.
+- Alone (offline or the only player in a room) the whole game pauses (tree, sound loops, radio). With 2+ players
+  it pauses only when EVERY player has the menu open (host counts via RPC on PauseMenu, tells everyone);
+  until then the mission runs and only local input is blocked (`Tutorial.hold()`). Tutorial + PauseMenu + Sfx run with PROCESS_MODE_ALWAYS.
 
 ## Cruise lighting (`scripts/game/ship_lighting.gd`, `shaders/light_*.gdshader`)
 - SIMPLIFIED: progress = day / 259 on the transfer ellipse (a 1.26 AU, e 0.206) -> Sun 1.00 -> 1.52 AU,
@@ -153,7 +279,8 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
   battery, full storage), a dialog explains it (real basis, who, how, which parts help; sim paused), then a live
   "HOW TO BEAT IT" checklist under the banner + arrow over the station ticks off steps from sim state, then a
   one-line outcome. Seen state `seen/event_<id>` in tutorial.cfg; off with SKIP TUTORIAL. In co-op only the
-  host's open dialog pauses the sim.
+  host's open dialog pauses the sim. Priority: storm/debris (3) > hull breach (2) > the rest (1); a new unseen event cuts a
+  lower or equal rank-1 walkthrough, so first encounters are not missed.
 
 ## Presentation
 - Gameplay scenes use `PixelMode` (480x270, integer scale, **canvas_items** stretch) so UI text renders at
@@ -165,7 +292,9 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
 Overcooked loop: background pressure (battery drain, data filling, drift, DSN passes) + **tickets**
 (events) that pop on a station with a countdown.
 - **Docking:** walk into a station's ring (hold Shift to run), tap USE to dock. While docked, ←/→ are the station's
-  choices, USE is held to work, ↑/↓ leaves. One set of 5 keys per player for any station.
+  choices, USE is held to work, **Q** (or ↑/↓) leaves. Q also closes the tutorial / event dialogs, briefing, Codex,
+  ESC menu, and steps out of the shield / safe-mode minigames without failing (the ticket stays).
+- Shields up (`cme.shields`) block the downlink until the storm passes (SIMPLIFIED) - a shields-vs-data trade-off. One set of 5 keys per player for any station.
 - **Hold to work:** holding USE fills a progress ring (ticket `work_time`, 1–3 s); releasing resets.
   The client tracks progress and sends `resolve` when full.
 - **Missed ticket → station OFFLINE** until someone docks and holds a repair (no timer). An offline
@@ -175,6 +304,11 @@ Overcooked loop: background pressure (battery drain, data filling, drift, DSN pa
   on). Scientist hold USE = observe during a science window (instruments must be on).
   A pending ticket always takes USE first.
 - Score = science **downlinked** + arrival outcome + resources left. Data that overflows storage is lost.
+- **Science loop (made visible 2026-11-15):** observation (science window, instruments ON) -> recorder
+  (`state.science_stored` = DATA bar) -> Comms downlinks in a DSN pass -> `science_sent` (= score). A full
+  recorder loses new science (`science_lost`). HUD: "STORED / SENT / LOST"; toasts say "+N stored", "STORAGE FULL -
+  LOST", or warn when a window opens with instruments OFF / storage full; floating "+N SCIENCE", "+N SENT HOME",
+  "-N LOST" (Vfx). `state.observations` counts captured windows (the walkthrough uses it for its outcome).
 
 ### Contract draft (agree with Person A before building the real sim)
 All plain dictionaries so they go over the network unchanged.
@@ -205,8 +339,25 @@ Rooms/lobby: `Network` autoload (`scripts/network.gd`). In the game scene, `NetS
   at 20 Hz through the host; others show it as a puppet (`CrewMember.remote`). Docking is synced, so a
   station in use by another player shows "IN USE".
 - Roles by player count (sorted peer ids, host first): 1 all · 2 Nav+Eng / Comms+Sci · 3 Nav / Eng / Comms+Sci · 4 one each.
-- Not yet: event rate scaling by player count (sim side), late join, host migration.
+- Event pace by player count (`fake_mission` PACE / TICKET_PACE, index = players): 1 = x1.35 storm/debris gaps, ticket
+  timers and cruise length, tickets every ~10-16 s; 2 = x1.2 / ~8-13 s; 3 = x1.1; 4 = x1, tickets every 6-10 s.
+- Not yet: late join, host migration.
 - Test on one laptop: run the game twice, host creates a room, the other joins `127.0.0.1`.
+
+### Online co-op (built 2026-11-15) — room codes through a relay on Railway
+- Railway has no UDP and home routers block ENet, so internet play goes through `relay/server.js` (Node + `ws`,
+  `relay/README.md`: protocol, deploy, `npm test`). The relay only hands out 4-letter codes (no I/O) and forwards
+  bytes; the host's game stays the authority.
+- Godot: `RelayPeer` (`scripts/net/relay_peer.gd`, a `MultiplayerPeerExtension` over `WebSocketPeer`). Host = id 1,
+  clients 2, 3, ...; clients only send to the host, Godot's server relay does client <-> client. **No RPC code changed.**
+  Everything arrives reliable + ordered (TCP), including `unreliable_ordered` RPCs.
+- `Network.online` (default true): `create_room` makes a relay room, the code arrives later (`code_received`,
+  `Network.room_code`). Lobby shows the code, plus a host-only button to switch to LOCAL IP (ENet) while alone.
+  `join_room(text)`: 4 letters = code, anything else = IP as before. Relay errors -> Russian texts (`RELAY_ERRORS`).
+- `Network.RELAY_URL` = `wss://space-turism-relay-production.up.railway.app` (Railway project space-turism-relay, deployed
+  with `railway up` from `relay/`; redeploy the same way after changing server.js);
+  `--relay=ws://...` on the command line overrides it. Local test: `cd relay && npm start`, run the game twice with
+  `--relay=ws://127.0.0.1:8080`, host -> code -> join.
 
 ## Orbit simulation (shared by planner and cruise)
 - Units AU and days; Sun fixed at origin; Earth/Mars on circles (1.0 AU / 365 d, 1.52 AU / 687 d)
@@ -316,7 +467,7 @@ Pick a mission → overload instruments → fail on data downlink with the expla
 different ways → both succeed with different scores → NASA comparison.
 
 ## Still open
-- Final mission list (based on real NASA Mars missions, with end-of-game reveal) and win conditions.
+- Mission balance with real players (targets in data/missions.json); Russian level-select cards vs English game text.
 - Part stats / balance numbers; event frequencies (station walking distances matter — Comms↔Bridge
   is the longest run).
 - Launcher sprites and the launch-pad rocket-cutaway screen.

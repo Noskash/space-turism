@@ -5,6 +5,8 @@ extends CanvasLayer
 ## Parts: reaction wheels = fast turning, no fuel for turning; star tracker = warning marks at the
 ## edge before a chunk flies in. Runs locally on the pilot's machine, then emits `finished`
 ## with {hits, thrust, turning} (seconds of thruster use -> the sim charges fuel).
+## Ship MASS (from the design) sets the feel: a light ship is quick and small, a heavy one is slow to
+## speed up, turns slower, is bigger (easier to hit) but gets knocked around less. Hull % is shown.
 ## SIMPLIFIED: real comet debris is mostly dust; here it is fist-sized chunks so you can see them.
 
 signal finished(result: Dictionary)
@@ -18,10 +20,17 @@ const TURN_SLOW := 4.4          # rad/s with thrusters
 const TURN_FAST := 7.0          # with reaction wheels
 const INVULN := 0.9
 const OUTRO := 1.1
+const REF_MASS := 380.0         # balanced ship, bare kit = the feel the constants were tuned for
 
 var duration := 6.0
 var wheels := false
 var tracker := false
+var mass := REF_MASS            # kg, from the design
+var hull := 100.0               # hull % going in (more hits = more breach risk, shown on the HUD)
+var density := 1.0              # share of the field we fly through (course change on the radar: 0.3..1)
+
+var _agility := 1.0             # REF_MASS / mass, clamped: >1 light and nimble, <1 heavy and sluggish
+var _size := 1.0                # drawn size + hitbox (heavier = bigger)
 
 var _canvas: Node2D
 var _t := -INTRO
@@ -46,6 +55,8 @@ var _rng := RandomNumberGenerator.new()
 func _ready() -> void:
 	layer = 15
 	_rng.randomize()
+	_agility = clampf(REF_MASS / maxf(mass, 1.0), 0.55, 1.45)
+	_size = clampf(sqrt(1.0 / _agility), 0.85, 1.3)
 	_canvas = Node2D.new()
 	_canvas.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	_canvas.draw.connect(_draw_game)
@@ -86,7 +97,7 @@ func _process(delta: float) -> void:
 	if _t >= 0.0:
 		_spawn -= delta
 		if _spawn <= 0.0:
-			_spawn = lerpf(0.34, 0.2, clampf(_t / duration, 0.0, 1.0))  # it gets busier
+			_spawn = lerpf(0.4, 0.26, clampf(_t / duration, 0.0, 1.0)) / maxf(density, 0.3)  # busier; thinner at the edge
 			_spawn_rock(false)
 	_move_rocks(delta)
 	_step_sparks(delta)
@@ -99,16 +110,16 @@ func _process(delta: float) -> void:
 
 func _fly(delta: float) -> void:
 	var turn := Input.get_axis(Controls.action("p1", "left"), Controls.action("p1", "right"))
-	_angle += turn * (TURN_FAST if wheels else TURN_SLOW) * delta
+	_angle += turn * (TURN_FAST if wheels else TURN_SLOW) * clampf(pow(_agility, 0.4), 0.75, 1.15) * delta
 	if turn != 0.0:
 		_turn_time += delta
 	_thrusting = Input.is_action_pressed(Controls.action("p1", "up"))
 	if _thrusting:
-		_vel += Vector2.from_angle(_angle) * ACCEL * delta
+		_vel += Vector2.from_angle(_angle) * ACCEL * _agility * delta
 		_thrust_time += delta
 	if Input.is_action_pressed(Controls.action("p1", "down")):
-		_vel = _vel.move_toward(Vector2.ZERO, ACCEL * 0.9 * delta)
-	_vel = _vel.limit_length(MAX_SPEED)
+		_vel = _vel.move_toward(Vector2.ZERO, ACCEL * 0.9 * _agility * delta)
+	_vel = _vel.limit_length(MAX_SPEED * sqrt(_agility))
 	_ship = Vector2(fposmod(_ship.x + _vel.x * delta, SIZE.x), fposmod(_ship.y + _vel.y * delta, SIZE.y))  # wraps
 	Sfx.tune_loop("rocket", -8.0 if _thrusting else -80.0, 1.4)
 
@@ -123,14 +134,14 @@ func _spawn_rock(initial: bool) -> void:
 			p = _ship + (p - _ship).normalized() * 110.0
 	else:
 		var edge := _rng.randi() % 4
-		var outside := r + (36.0 if tracker else 6.0)   # tracker: spawned farther out, warned earlier
+		var outside := r + (48.0 if tracker else 24.0)   # spawned off-screen; tracker: warned earlier
 		match edge:
 			0: p = Vector2(_rng.randf() * SIZE.x, -outside)
 			1: p = Vector2(SIZE.x + outside, _rng.randf() * SIZE.y)
 			2: p = Vector2(_rng.randf() * SIZE.x, SIZE.y + outside)
 			_: p = Vector2(-outside, _rng.randf() * SIZE.y)
 	var aim := (_ship - p).angle() + _rng.randf_range(-0.55, 0.55)
-	var speed := _rng.randf_range(70.0, 150.0) * (12.0 / (r + 6.0))
+	var speed := _rng.randf_range(60.0, 125.0) * (12.0 / (r + 6.0))
 	if tracker and not initial:
 		speed *= 1.1
 	var pts := PackedVector2Array()
@@ -152,7 +163,7 @@ func _move_rocks(delta: float) -> void:
 		if rock.entered and not view.grow(rock.r + 60.0).has_point(rock.p):
 			_rocks.remove_at(i)
 			continue
-		if _invuln <= 0.0 and _t >= 0.0 and rock.p.distance_to(_ship) < rock.r * 0.85 + SHIP_R:
+		if _invuln <= 0.0 and _t >= 0.0 and rock.p.distance_to(_ship) < rock.r * 0.85 + SHIP_R * _size:
 			_hit(rock)
 
 
@@ -160,7 +171,7 @@ func _hit(rock: Dictionary) -> void:
 	_hits += 1
 	_invuln = INVULN
 	_shake = 1.0
-	_vel = (_ship - rock.p).normalized() * 120.0 + rock.v * 0.4
+	_vel = (_ship - rock.p).normalized() * 120.0 * _agility + rock.v * 0.4 * _agility   # heavy = knocked less
 	Sfx.play("impact", _rng.randf_range(0.8, 1.1))
 	Sfx.play("explode", 1.6, -8.0)
 	for k in 24:
@@ -186,8 +197,8 @@ func _draw_game() -> void:
 	c.draw_rect(Rect2(Vector2(-8, -8), SIZE + Vector2(16, 16)), Color("05060d"))
 	for st in _stars:
 		c.draw_rect(Rect2(Vector2(st.x, st.y).floor() + off * 0.3, Vector2(1, 1)), Color(0.8, 0.85, 1.0, 0.25 + st.z * 0.5))
-	# Tracker: red chevrons where a chunk is about to fly in.
-	if tracker:
+	# Red chevrons at the edge where a chunk is about to fly in (star tracker: it warns earlier).
+	if true:
 		for rock in _rocks:
 			if not rock.entered:
 				var edge := Vector2(clampf(rock.p.x, 6, SIZE.x - 6), clampf(rock.p.y, 6, SIZE.y - 6))
@@ -213,7 +224,7 @@ func _draw_game() -> void:
 
 func _draw_ship(at: Vector2) -> void:
 	var c := _canvas
-	var f := Vector2.from_angle(_angle)
+	var f := Vector2.from_angle(_angle) * _size
 	var r := f.orthogonal()
 	if _thrusting:
 		var l := 6.0 + _rng.randf_range(0.0, 4.0)
@@ -235,19 +246,24 @@ func _draw_hud() -> void:
 	c.draw_rect(bar, Color(1, 1, 1, 0.15))
 	c.draw_rect(Rect2(bar.position, Vector2(bar.size.x * left / duration, bar.size.y)), Color("4fd8ff"))
 	var title := "SURVIVE %.1fs" % left
-	c.draw_string(font, Vector2(240 - UiFont.width(title, 9) / 2.0, 28), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color.WHITE)
+	c.draw_string(font, Vector2(240 - UiFont.width(title, 9) / 2.0, 28), title, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(9), Color.WHITE)
 	var hits := "HITS %d" % _hits
-	c.draw_string(font, Vector2(470 - UiFont.width(hits, 9), 16), hits, HORIZONTAL_ALIGNMENT_LEFT, -1, 9,
+	c.draw_string(font, Vector2(470 - UiFont.width(hits, 9), 16), hits, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(9),
 			Color("ff5050") if _hits > 0 else Color("9aa4b8"))
-	c.draw_string(font, Vector2(10, 16), "COMET DEBRIS · SIMPLIFIED", HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color("6b7390"))
+	c.draw_string(font, Vector2(10, 16), "COMET DEBRIS · SIMPLIFIED", HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(7), Color("6b7390"))
+	var feel := "LIGHT: QUICK" if _agility > 1.12 else ("HEAVY: SLUGGISH" if _agility < 0.88 else "BALANCED")
+	c.draw_string(font, Vector2(10, 27), "MASS %d KG · %s" % [int(mass), feel], HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(7), Color("9aa4b8"))
+	var hull_col := Color("ff5050") if hull < 40.0 else (Color("ffc640") if hull < 70.0 else Color("9aa4b8"))
+	c.draw_string(font, Vector2(470 - UiFont.width("HULL %d%%" % int(hull), 7), 27), "HULL %d%%" % int(hull),
+			HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(7), hull_col)
 	var hint := "A/D TURN · W THRUST · S BRAKE"
-	c.draw_string(font, Vector2(240 - UiFont.width(hint, 8) / 2.0, 262), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("9aa4b8"))
+	c.draw_string(font, Vector2(240 - UiFont.width(hint, 8) / 2.0, 262), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(8), Color("9aa4b8"))
 	var part := "REACTION WHEELS: FAST TURNS, NO FUEL" if wheels else "THRUSTERS: TURNING BURNS FUEL"
-	c.draw_string(font, Vector2(10, 262), part, HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Color("6b7390"))
+	c.draw_string(font, Vector2(10, 262), part, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(6), Color("6b7390"))
 	if _t < 0.0:
 		var t := "DODGE THE DEBRIS!"
-		c.draw_string(font, Vector2(240 - UiFont.width(t, 16) / 2.0, 120), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("ffc640"))
+		c.draw_string(font, Vector2(240 - UiFont.width(t, 16) / 2.0, 120), t, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(16), Color("ffc640"))
 	elif _done:
 		var t := "CLEAR - NO HITS!" if _hits == 0 else "THROUGH - %d HIT%s" % [_hits, "" if _hits == 1 else "S"]
-		c.draw_string(font, Vector2(240 - UiFont.width(t, 16) / 2.0, 120), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16,
+		c.draw_string(font, Vector2(240 - UiFont.width(t, 16) / 2.0, 120), t, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(16),
 				Color("5cf07a") if _hits == 0 else Color("ff8a5c"))

@@ -33,9 +33,9 @@ func _draw() -> void:
 		draw_rect(rect, Color(0, 0, 0, 0.8))
 		draw_rect(rect, border, false, 1.0)
 		var tag: String = "FIX" if repair else TAGS.get(event.role, "?")
-		var w := font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
+		var w := font.get_string_size(tag, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x
 		draw_string(font, Vector2(roundf(x + (CHIP.x - w) / 2.0), 8), tag,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, ALERT_COLOR if repair else c)
+				HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE), ALERT_COLOR if repair else c)
 		if not repair and event.duration > 0.0:
 			var left := clampf(event.time_left / event.duration, 0.0, 1.0)
 			draw_rect(Rect2(x + 1, CHIP.y - 2, roundf((CHIP.x - 2) * left), 1), c)

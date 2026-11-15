@@ -1,0 +1,143 @@
+{
+  "_comment": "Mars campaign. Each mission = a real NASA robotic mission flown as a future crewed one (framing A). Read by scripts/missions.gd; fake_mission reads the 'sim' block. Numbers are first guesses (SIMPLIFIED), facts on screen are checked against NASA sources.",
+  "order": ["odyssey", "mro", "maven"],
+  "missions": {
+    "odyssey": {
+      "number": 1,
+      "title": "RADIATION SCOUT",
+      "nasa": "2001 Mars Odyssey",
+      "year": 2001,
+      "accent": "ffb04a",
+      "tagline": "Measure the radiation future astronauts will face on the way to Mars.",
+      "lesson": "Space weather: shielding costs mass, but it buys safety AND data.",
+      "cruise_days": 200,
+      "cruise_seconds": 150,
+      "favoured_orbit": "low",
+      "sim": {
+        "storms": true, "storm_first": 16, "storm_gap": [19, 24],
+        "big_storm_at": 0.7,
+        "debris": false, "hull": false, "conjunction_at": -1,
+        "science_weight": 0.6, "fault_weight": 1.0,
+        "moi_fuel": 15
+      },
+      "goals": [
+        {"kind": "storms_recorded", "target": 3, "text": "Record %d radiation storms (instruments ON as the wave hits)"},
+        {"kind": "science_sent", "target": 40, "text": "Send %d science home"},
+        {"kind": "orbit", "text": "Brake into Mars orbit"}
+      ],
+      "briefing": [
+        {"title": "The real mission", "body": "In 2001 NASA's Mars Odyssey carried MARIE, an instrument that measured space radiation on the way to Mars and in orbit - data needed before humans can go. In October 2003 a huge solar storm (the 'Halloween storms') knocked MARIE out. Odyssey itself is still flying today.", "terms": ["solar_particle_event", "marie"]},
+        {"title": "Your goal", "body": "GOALS", "terms": []},
+        {"title": "What will go wrong", "body": "Radiation storms come often. To RECORD one, the instruments must be ON when the wave hits. Safe mode keeps the ship safe but switches them OFF (no reading). Without shielding, taking the reading means the wave disables the ship.\nNear the end comes a HALLOWEEN-class storm, much stronger than the rest.\nNo shields? The CREW must also hide in the CARGO bay as each wave hits. Watch your own dose bars: that is exactly what MARIE was measuring for future astronauts.", "terms": ["safe_mode", "radiation_shielding", "storm_shelter", "radiation_dose"]},
+        {"title": "Crew jobs", "body": "ENGINEER: safe mode or loads ON? You decide with the Scientist.\nSCIENTIST: keep instruments ON for storm readings.\nANYONE: raise the shields at the Mission Hub table (if you bought them).\nNAVIGATOR: brake into orbit at the end (needs fuel AND power).", "terms": ["mars_orbit_insertion"]},
+        {"title": "Design tips", "body": "Radiation shielding (PWR, 50 kg) lets you record a storm AND stay safe. The particle monitor (SCI) warns you 7 s earlier. A rad-hard CPU means fewer faults and an easier shield minigame. All of it costs mass, power and budget - a light ship flies cheap but has few slots.\nORBIT (SHIP column): mapping Mars' radiation and ground suits a LOW orbit - but braking into it takes a lot of fuel. Odyssey aerobraked for 77 days to get there cheaply.", "terms": ["rad_hard", "delta_v", "polar_orbit", "aerobraking"]}
+      ],
+      "nasa_card": {
+        "title": "WHAT NASA ACTUALLY DID",
+        "body": "Mars Odyssey launched April 7, 2001 and reached Mars on October 24, 2001 - about 200 days. MARIE measured the radiation astronauts would face around Mars. On October 28, 2003 a giant solar particle event knocked MARIE out. Robots can't shelter - a crew can, which is why storm warnings and shielding matter so much for human missions."
+      }
+    },
+    "mro": {
+      "number": 2,
+      "title": "DATA FIREHOSE",
+      "nasa": "Mars Reconnaissance Orbiter",
+      "year": 2005,
+      "accent": "4fd8ff",
+      "tagline": "Photograph Mars in high detail - and get all that data home.",
+      "lesson": "Data: science only counts once it reaches Earth. The downlink is the bottleneck.",
+      "cruise_days": 210,
+      "cruise_seconds": 165,
+      "favoured_orbit": "low",
+      "sim": {
+        "storms": true, "storm_first": 45, "storm_gap": [55, 70],
+        "big_storm_at": -1,
+        "debris": true, "debris_first": 30, "debris_gap": [50, 65],
+        "hull": false, "conjunction_at": 0.62,
+        "science_weight": 2.4, "fault_weight": 0.8,
+        "moi_fuel": 18
+      },
+      "goals": [
+        {"kind": "science_sent", "target": 120, "text": "Send %d science home"},
+        {"kind": "science_lost_max", "target": 25, "text": "Lose less than %d science to full storage"},
+        {"kind": "orbit", "text": "Brake into Mars orbit"}
+      ],
+      "briefing": [
+        {"title": "The real mission", "body": "NASA's Mars Reconnaissance Orbiter (MRO) launched in 2005 with HiRISE, a camera that sees things on Mars about 1 m across. Pictures like that are HUGE, so MRO carries a 3 m dish antenna to send them home.", "terms": ["hirise", "high_gain_antenna"]},
+        {"title": "Your goal", "body": "GOALS", "terms": []},
+        {"title": "What will go wrong", "body": "Many science windows - the recorder fills fast. Data only reaches Earth during Deep Space Network passes.\nLate in the flight comes SOLAR CONJUNCTION: the Sun sits between you and Earth and blocks the radio for a while. Empty the recorder BEFORE it starts.\nComet debris crosses the path too.", "terms": ["dsn", "downlink", "solar_conjunction"]},
+        {"title": "Crew jobs", "body": "SCIENTIST: catch science windows.\nCOMMS: downlink in every DSN pass - you are the bottleneck.\nENGINEER: keep the transmitter powered; maybe switch instruments OFF before conjunction.\nNAVIGATOR: steer around debris (burns point the antenna away!) and brake into orbit.", "terms": ["mars_orbit_insertion"]},
+        {"title": "Design tips", "body": "The high-gain dish sends much faster. A big recorder survives conjunction. Each costs mass, power and budget - and more instruments make even MORE data. Fix one bottleneck and you find the next.\nORBIT (SHIP column): HiRISE needs a LOW orbit for sharp pictures, but a low orbit sees Earth less - the dish matters even more there.", "terms": ["light_time_delay", "polar_orbit"]}
+      ],
+      "nasa_card": {
+        "title": "WHAT NASA ACTUALLY DID",
+        "body": "MRO launched August 12, 2005 and braked into Mars orbit on March 10, 2006 (about 7 months), then spent about 5 months aerobraking - dipping into the thin air to lower its orbit and save fuel. HiRISE has taken over 100,000 images. MRO also relays data from rovers on the surface: its big dish is a bridge home for the whole Mars fleet."
+      }
+    },
+    "maven": {
+      "number": 3,
+      "title": "THIN AIR",
+      "nasa": "MAVEN",
+      "year": 2013,
+      "accent": "d0a8ff",
+      "tagline": "Find out how the Sun stripped away most of Mars' air.",
+      "lesson": "Everything at once: storms are the science, debris threatens the hull, the crew has to breathe.",
+      "cruise_days": 307,
+      "cruise_seconds": 180,
+      "favoured_orbit": "elliptical",
+      "sim": {
+        "storms": true, "storm_first": 22, "storm_gap": [40, 50],
+        "big_storm_at": -1,
+        "debris": true, "debris_first": 45, "debris_gap": [45, 60],
+        "hull": true, "conjunction_at": -1,
+        "science_weight": 1.2, "fault_weight": 1.0,
+        "moi_fuel": 18
+      },
+      "goals": [
+        {"kind": "storms_recorded", "target": 2, "text": "Measure %d solar storms hitting (instruments ON)"},
+        {"kind": "science_sent", "target": 80, "text": "Send %d science home"},
+        {"kind": "orbit", "text": "Brake into Mars orbit"}
+      ],
+      "briefing": [
+        {"title": "The real mission", "body": "Mars once had thick air and water. Where did it go? NASA's MAVEN (2013) found the answer: Mars has no global magnetic field, so the solar wind strips gas off the top of its atmosphere - and solar storms make it much worse.", "terms": ["solar_wind", "magnetosphere", "atmospheric_escape"]},
+        {"title": "Your goal", "body": "GOALS", "terms": []},
+        {"title": "What will go wrong", "body": "Solar storms ARE your science: measure them with instruments ON - but protect the ship.\nComet debris can punch HULL BREACHES. Breaches vent your air: grab a toolbox (red lockers in Cargo and the Engine Room) and patch them before the oxygen runs out. Your ship can lose its air like Mars did.", "terms": ["comet_debris", "hull_breach"]},
+        {"title": "Crew jobs", "body": "EVERYONE: patch breaches when they open.\nNAVIGATOR: radar (E at the Bridge) - steer around debris or fly through it.\nENGINEER + SCIENTIST: shields or safe mode during storms.\nCOMMS: send the storm data home.", "terms": ["mars_orbit_insertion"]},
+        {"title": "Design tips", "body": "A Whipple shield halves debris damage. Radiation shielding lets you measure storms safely. A heavy ship gets knocked around less but needs a bigger rocket. You can't buy everything: decide what you are willing to risk.\nORBIT (SHIP column): to sample the air at every height, MAVEN flies a long ELLIPTICAL orbit, 150 to 6,200 km up.", "terms": ["whipple_shield", "elliptical_orbit"]}
+      ],
+      "nasa_card": {
+        "title": "WHAT NASA ACTUALLY DID",
+        "body": "MAVEN launched November 18, 2013 and entered Mars orbit on September 21, 2014. It measured the solar wind stripping about 100 grams of gas every second - and much more during solar storms, like the ones in March 2015. Over billions of years that helped turn Mars from a wetter world into a cold desert. A crewed ship has the same problem in miniature: it must hold on to its air."
+      }
+    }
+  },
+  "sandbox": {
+    "number": 0,
+    "title": "SANDBOX",
+    "nasa": "Trade studies",
+    "year": 0,
+    "accent": "8cffb0",
+    "tagline": "Double budget, no goals. Switch hazards on and off and see what each design survives.",
+    "lesson": "Change ONE thing, fly again, compare the reports.",
+    "cruise_days": 259,
+    "cruise_seconds": 150,
+    "budget_mult": 2.0,
+    "favoured_orbit": "",
+    "sim": {
+      "storms": true, "debris": true, "hull": false, "conjunction_at": 0.6,
+      "big_storm_at": -1, "science_weight": 1.2, "fault_weight": 1.0,
+      "moi_fuel": 15
+    },
+    "goals": [],
+    "briefing": [
+      {"title": "Sandbox", "body": "No goals, no stars - and TWICE the budget. Mass, power and the rockets still set the limits.\nThe hazards you switched on in the mission picker are the only ones you will meet.\nScore = every bit of science sent home + science from orbit + healthy crew. Fly, read the report, change one thing, fly again.", "terms": ["delta_v"]}
+    ],
+    "nasa_card": {
+      "title": "WHAT NASA DOES: TRADE STUDIES",
+      "body": "Before a mission is approved, NASA teams such as the Mission Design Lab run trade studies: they compare different spacecraft, orbits and launch vehicles for the same goal and weigh mass, power, cost and risk. There is rarely one right answer - just the best compromise for that mission."
+    }
+  },
+  "failure_card": {
+    "title": "YOU'RE NOT ALONE: MARS CLIMATE ORBITER (1999)",
+    "body": "NASA lost the Mars Climate Orbiter at arrival: one team's software gave thruster data in pound-force seconds, another expected newton-seconds. The navigation was off, the spacecraft came in far too low and was destroyed in the atmosphere. Cost: about $125M for the orbiter. Since then NASA double-checks units on every mission."
+  }
+}

@@ -67,7 +67,15 @@ static func upgrades_for_role(role: String) -> Array[String]:
 
 
 static func new_design(ship_class := "balanced") -> Dictionary:
-	return {ship_class = ship_class, upgrades = []}
+	return {ship_class = ship_class, upgrades = [], orbit = Orbits.default_id()}
+
+
+## Pick the Mars orbit (Orbits): changes the brake-burn fuel and the science from orbit, not the ship.
+static func set_orbit(design: Dictionary, orbit: String) -> Dictionary:
+	var out := design.duplicate(true)
+	if Orbits.data().orbits.has(orbit):
+		out.orbit = orbit
+	return out
 
 
 ## Totals and problems for the HUD / ready check.
@@ -92,7 +100,7 @@ static func evaluate(design: Dictionary) -> Dictionary:
 		cost += float(launcher.cost)
 	var result := {
 		mass = mass, mass_limit = float(cls.get("mass_limit_kg", 0)),
-		cost = cost, budget = float(stats.total_budget),
+		cost = cost, budget = float(stats.total_budget) * float(Missions.current().get("budget_mult", 1.0)),   # sandbox: x2
 		gen_w = gen, draw_w = draw, net_w = gen - draw,
 		slots_used = design.get("upgrades", []).size(), slots = int(cls.get("upgrade_slots", 0)),
 		launcher = launcher, errors = [],
@@ -170,6 +178,7 @@ static func mission_params(design: Dictionary) -> Dictionary:
 		downlink_rate = float(b.downlink_rate), science = float(b.science),
 		dsn_pass = float(b.dsn_pass), burn_fuel = float(b.burn_fuel),
 		repair_work = float(b.repair_work), storm_weight = 1.0, leak_weight = 1.0,
+		moi_mult = 1.0,        # share of the tank the Mars brake burn needs (large tank: half)
 		instrument_count = 0,
 		# Space-weather events (fake_mission): which parts help.
 		storm_proof_w = 0.0,   # power that survives a radiation storm tripping the solar bus (RTG)
@@ -178,6 +187,10 @@ static func mission_params(design: Dictionary) -> Dictionary:
 		cme_warning = 0.0,     # extra seconds of radiation storm warning (particle monitor)
 		dust_warning = 0.0,    # extra seconds of comet-dust warning (star tracker)
 		steer_free = false,    # dodge without thrusters (reaction wheels)
+		# Hull: damage per debris hit from the ship class (heavier hull = less), Whipple shield halves it.
+		hull_hit = float(class_info(design.get("ship_class", "balanced")).get("hull_hit", 12)),
+		breach_mult = 1.0,     # Whipple shield: fewer breaches
+		mass = float(evaluate(design).mass),   # flight feel in the debris dodge
 	}
 	for id: String in design.get("upgrades", []):
 		var part_data := part(id)
@@ -197,6 +210,7 @@ static func mission_params(design: Dictionary) -> Dictionary:
 		p.dsn_pass += float(fx.get("dsn_pass", 0))
 		p.downlink_rate *= float(fx.get("downlink_mult", 1))
 		p.burn_fuel *= float(fx.get("burn_mult", 1))
+		p.moi_mult *= float(fx.get("moi_mult", 1))
 		p.repair_work *= float(fx.get("repair_mult", 1))
 		p.storm_weight *= float(fx.get("storm_mult", 1))
 		p.leak_weight *= float(fx.get("leak_mult", 1))
@@ -206,6 +220,8 @@ static func mission_params(design: Dictionary) -> Dictionary:
 		p.cme_warning += float(fx.get("cme_warning", 0))
 		p.dust_warning += float(fx.get("dust_warning", 0))
 		p.steer_free = p.steer_free or bool(fx.get("steer_free", 0))
+		p.hull_hit *= float(fx.get("hull_hit_mult", 1))
+		p.breach_mult *= float(fx.get("breach_mult", 1))
 	return p
 
 

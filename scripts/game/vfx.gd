@@ -53,6 +53,23 @@ var _siren_timer := 0.0
 var _dust_phase := ""
 var _shields := false
 var _grains: Array[Vector3] = []  # x, y, speed: comet dust streaking past outside the hull
+# Meteoroid hitting the powerless ship (state.meteor): rock drawn flying in, then the crash.
+const METEOR_SHOW := 2.5
+const HULL_FRONT := 462.0
+var _meteor_left := -1.0
+var _meteor_y := 135.0
+var _meteor_seq := 0
+var _flash := 0.0                 # white screen flash on impact
+# Mission lost: chain of explosions across the ship, then GameOver breaks it apart.
+const DOOM_TIME := 2.6
+var _doom := 0.0
+var _doom_boom := 0.0
+var _proximity := 0.0             # proximity alarm beep timer
+# Science bookkeeping made visible: "+10 SCIENCE" at the lab, "+6 SENT HOME" at Comms, "-3 LOST".
+var _texts: Array[Dictionary] = []   # {p, text, col, life}
+var _sent_acc := 0.0
+var _lost_acc := 0.0
+var _sci_timer := 0.0
 
 
 func setup(game: Node2D, map: ShipMap, crew: Node2D) -> void:
@@ -117,6 +134,11 @@ func _on_state(state: Dictionary) -> void:
 		else:
 			_success(at, Station.ROLE_COLORS.get(event.role, Color.WHITE))
 
+	if state.get("lost", "") != "" and _prev.get("lost", "") == "":
+		_doom = DOOM_TIME
+		Sfx.set_loop("engine", false)
+		Sfx.set_loop("hum", false)
+	_science_numbers(state)
 	_weather(state)
 	var punctured: bool = int(state.get("dust", {}).get("hits", 0)) > int(_prev.get("dust", {}).get("hits", 0))
 	if not punctured and float(state.get("fuel", 0)) < float(_prev.get("fuel", 0)) - 1.0:
@@ -156,6 +178,12 @@ func _weather(state: Dictionary) -> void:
 		_flicker = 2.0
 		Sfx.play("brownout")
 		Sfx.play("explode", 0.5, -6.0)
+	var meteor: Dictionary = state.get("meteor", {})
+	_meteor_left = float(meteor.get("time_left", -1.0))
+	_meteor_y = float(meteor.get("y", 135.0))
+	if int(meteor.get("seq", 0)) > _meteor_seq:
+		_meteor_crash(Vector2(HULL_FRONT - 4.0, _meteor_y))
+	_meteor_seq = int(meteor.get("seq", 0))
 	var dust: Dictionary = state.get("dust", {})
 	_dust_phase = dust.get("phase", "")
 	var hits := int(dust.get("hits", 0)) - int(_prev.get("dust", {}).get("hits", 0))
@@ -170,6 +198,60 @@ func _weather(state: Dictionary) -> void:
 		for k in 18:
 			_spark(at, Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(30, 90),
 					[Color.WHITE, Color("ffd890"), Color("c8b89a")][k % 3], 0.45, 0.0)
+
+
+## The big one: rock meets hull. Flash, heavy shake, crunch, debris, hull breach smoke.
+func _meteor_crash(at: Vector2) -> void:
+	_meteor_left = -1.0
+	_flash = 1.0
+	_shake = maxf(_shake, 1.8)
+	_alarm = 1.0
+	Sfx.play("impact", 0.55)
+	Sfx.play("explode", 0.45)
+	Sfx.play("wave", 0.7, -4.0)
+	Sfx.play("creak", 0.8)
+	_rings.append({p = at, r = 3.0, speed = 160.0, life = 0.4, max = 0.4, col = Color.WHITE})
+	_rings.append({p = at, r = 2.0, speed = 90.0, life = 0.5, max = 0.5, col = FIRE[1]})
+	for i in 40:
+		var dir := Vector2.from_angle(_rng.randf_range(PI * 0.5, PI * 1.5))  # sprays back into the ship
+		_spark(at, dir * _rng.randf_range(40, 160), FIRE[i % FIRE.size()], _rng.randf_range(0.4, 0.9), 60.0,
+				2 if i % 3 == 0 else 1)
+	for i in 16:  # rock and hull fragments bouncing off into space
+		var dir := Vector2.from_angle(_rng.randf_range(-PI * 0.45, PI * 0.45))
+		_spark(at, dir * _rng.randf_range(30, 110), [Color("8a7a66"), Color("5e5348"), Color("b0a490")][i % 3],
+				_rng.randf_range(0.8, 1.5), 0.0, 2)
+	for i in 10:
+		_smoke(at + Vector2(_rng.randf_range(-12, 2), _rng.randf_range(-6, 6)), 1.8)
+
+
+func _science_numbers(state: Dictionary) -> void:
+	var stored := float(state.get("science_stored", 0.0)) - float(_prev.get("science_stored", 0.0))
+	var sent := float(state.get("science_sent", 0.0)) - float(_prev.get("science_sent", 0.0))
+	if stored + maxf(sent, 0.0) > 5.0:   # a burst (observation / storm data), not the slow trickle
+		_float_text(_station_pos("scientist") + Vector2(0, 18), "+%d SCIENCE" % roundi(stored + maxf(sent, 0.0)), Color("d0a8ff"))
+	_sent_acc += maxf(sent, 0.0)
+	_lost_acc += maxf(float(state.get("science_lost", 0.0)) - float(_prev.get("science_lost", 0.0)), 0.0)
+
+
+func _float_text(at: Vector2, text: String, col: Color) -> void:
+	_texts.append({p = at, text = text, col = col, life = 1.6})
+
+
+## One blast of the final chain: fire, smoke, a shockwave ring; sounds thinned out so they don't clip.
+func _doom_explosion(at: Vector2, k: float) -> void:
+	_doom_boom -= 1.0
+	if _doom_boom <= 0.0:
+		_doom_boom = 2.0
+		Sfx.play("explode", _rng.randf_range(0.5, 0.9))
+		if _rng.randf() < 0.4:
+			Sfx.play("impact", 0.5, -4.0)
+	for i in int(18 + 20 * k):
+		_spark(at, Vector2.from_angle(_rng.randf() * TAU) * _rng.randf_range(40, 140 + 80 * k),
+				FIRE[i % FIRE.size()], _rng.randf_range(0.4, 0.9), 40.0, 2 if i % 3 == 0 else 1)
+	for i in 4:
+		_smoke(at + Vector2(_rng.randf_range(-6, 6), _rng.randf_range(-6, 6)), 1.6)
+	_rings.append({p = at, r = 3.0, speed = 110.0 + 80.0 * k, life = 0.35, max = 0.35, col = FIRE[1]})
+	_flash = maxf(_flash, 0.25 * k)
 
 
 func _station_pos(role: String) -> Vector2:
@@ -234,6 +316,45 @@ func _process(delta: float) -> void:
 	_burn = maxf(_burn - delta, 0.0)
 	_downlink = maxf(_downlink - delta, 0.0)
 
+	_flash = maxf(_flash - delta * 2.5, 0.0)
+	_sci_timer -= delta
+	if _sci_timer <= 0.0:
+		_sci_timer = 1.0
+		if _sent_acc >= 1.0:
+			_float_text(_station_pos("comms") + Vector2(0, 18), "+%d SENT HOME" % roundi(_sent_acc), Color("8cffb0"))
+			_sent_acc = 0.0
+		if _lost_acc >= 1.0:
+			_float_text(_station_pos("scientist") + Vector2(0, 28), "-%d LOST (STORAGE FULL)" % roundi(_lost_acc), Color("ff6a5a"))
+			_lost_acc = 0.0
+	for i in range(_texts.size() - 1, -1, -1):
+		var ft: Dictionary = _texts[i]
+		ft.life -= delta
+		ft.p += Vector2(0, -12.0 * delta)
+		if ft.life <= 0.0:
+			_texts.remove_at(i)
+	if _doom > 0.0:
+		_doom -= delta
+		var k := 1.0 - _doom / DOOM_TIME           # 0 -> 1: more, bigger, faster
+		_shake = maxf(_shake, 0.8 + 1.4 * k)
+		_alarm = 1.0
+		if _every("doom", lerpf(0.22, 0.06, k), delta):
+			var at := Vector2(_rng.randf_range(HULL.position.x + 20, HULL.end.x - 20), _rng.randf_range(HULL.position.y + 20, HULL.end.y - 20))
+			_doom_explosion(at, k)
+		if _doom <= 0.0:
+			_flash = 1.0
+			Sfx.play("explode", 0.35)
+			Sfx.play("wave", 0.5)
+	if _meteor_left > 0.0:
+		_meteor_left -= delta
+		if _meteor_left < METEOR_SHOW:
+			_proximity -= delta
+			if _proximity <= 0.0:   # proximity alarm: faster as it closes in
+				_proximity = lerpf(0.12, 0.45, _meteor_left / METEOR_SHOW)
+				Sfx.play("remind", 1.6, -2.0)
+			if _every("meteor_trail", 0.03, delta):
+				var p := _meteor_pos()
+				_spark(p + Vector2(_rng.randf_range(-3, 3), -6), Vector2(_rng.randf_range(-20, 20), _rng.randf_range(-70, -30)),
+						[Color("ffd890"), Color("c8b89a"), Color("8a7a66")][_rng.randi() % 3], 0.4)
 	_tick_reminders(delta)
 	if _cme_phase == "warning":
 		_siren_timer -= delta
@@ -369,6 +490,20 @@ func _draw() -> void:
 			pts.append(Vector2(243, 135) + Vector2(cos(a) * 236.0, sin(a) * 130.0) * wob)
 		draw_polyline(pts, Color(0.45, 0.85, 1.0, (0.35 + 0.2 * sin(_t * 6.0)) * strong), 2.0)
 		draw_polyline(pts, Color(0.8, 0.95, 1.0, 0.25 * strong), 1.0)
+	# Incoming meteoroid (only while the ship is dead in space).
+	if _meteor_left > 0.0 and _meteor_left < METEOR_SHOW:
+		var mp := cam + _meteor_pos()
+		var size := 7.0 + 3.0 * (1.0 - _meteor_left / METEOR_SHOW)
+		draw_circle(mp + Vector2(-10, 14), size, Color(0, 0, 0, 0.3))   # its shadow on the hull
+		var pts := PackedVector2Array()
+		for i in 9:
+			var a := TAU * i / 9.0 + _t * 2.0
+			var r := size * (0.75 + 0.25 * sin(i * 2.7))
+			pts.append(mp + Vector2(cos(a), sin(a)) * r)
+		draw_circle(mp, size + 3.0, Color(1.0, 0.7, 0.4, 0.15))
+		draw_colored_polygon(pts, Color("6e6152"))
+		draw_polyline(pts + PackedVector2Array([pts[0]]), Color("a8987e"), 1.0)
+		draw_rect(Rect2(mp + Vector2(-2, -2), Vector2(2, 2)), Color("4a4038"))
 	for g in _grains:
 		var gp := Vector2(g.x, g.y)
 		if not HULL.has_point(gp):
@@ -426,6 +561,22 @@ func _draw() -> void:
 			draw_rect(Rect2(margin.end.x - w, margin.position.y, w, margin.size.y), col)
 	if _flicker > 0.0 and _rng.randf() < 0.6:
 		draw_rect(margin, Color(0, 0, 0.03, _rng.randf_range(0.25, 0.6) * minf(_flicker, 1.0)))
+	for ft in _texts:
+		var w := UiFont.width(ft.text, 8)
+		var a := clampf(ft.life / 0.5, 0.0, 1.0)
+		var pos := ((ft.p as Vector2) - Vector2(w / 2.0, 0)).round()
+		draw_string_outline(UiFont.font(), pos, ft.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, 2, Color(0, 0, 0, 0.8 * a))
+		draw_string(UiFont.font(), pos, ft.text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(8), Color(ft.col, a))
+	if _flash > 0.0:  # meteoroid impact
+		draw_rect(margin, Color(1.0, 0.95, 0.85, 0.7 * _flash * _flash))
+
+
+## Where the meteoroid is now: dives in from above the top-right (seen over the hull in the top-down
+## view) and speeds up into the hull's nose.
+func _meteor_pos() -> Vector2:
+	var k := clampf(_meteor_left / METEOR_SHOW, 0.0, 1.0)
+	var e := k * k * 0.6 + k * 0.4   # accelerates towards impact
+	return Vector2(HULL_FRONT - 4.0, _meteor_y).lerp(Vector2(470.0, -24.0), e) + Vector2(-60.0, 0.0) * sin(e * PI) 
 
 
 func _draw_under() -> void:

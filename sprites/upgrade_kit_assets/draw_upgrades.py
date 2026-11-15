@@ -124,6 +124,16 @@ def spr_particle_monitor():
     return s
 
 
+def spr_whipple_shield():
+    """Whipple shield: thin bumper sheets stacked with gaps in front of the hull wall."""
+    s = Canvas(10, 10)
+    s.rect(0, 0, 10, 10, "metalD")
+    for i, c in enumerate(["silverL", "silver", "silverD"]):
+        s.rect(1 + i * 3, 1, 2, 8, c)
+    s.px(1, 3, "cyan"); s.px(4, 6, "cyanD"); s.px(2, 7, "white")
+    return s
+
+
 def spr_recorder_small():
     s = Canvas(8, 8)
     s.rect(0, 0, 8, 8, "metalD"); s.rect(1, 1, 6, 6, "ink")
@@ -239,6 +249,7 @@ UPGRADES = [
     ("tank_large", "Large propellant tank", "navigator", spr_tank_large, "cell", None),
     ("star_tracker", "Star tracker", "navigator", spr_star_tracker, "cell", None),
     ("reaction_wheels", "Reaction wheels", "navigator", spr_reaction_wheels, "cell", None),
+    ("whipple_shield", "Whipple shield", "navigator", spr_whipple_shield, "cell", None),
     ("camera_hires", "High-res camera", "scientist", spr_camera_hires, "cell", None),
     ("spectrometer", "Spectrometer", "scientist", spr_spectrometer, "cell", None),
     ("radar_sounder", "Radar sounder", "scientist", spr_radar_sounder, "cell", None),

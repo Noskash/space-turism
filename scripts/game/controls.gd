@@ -12,7 +12,9 @@ const SCHEMES := {
 		"right": [KEY_D, KEY_RIGHT],
 		"up": [KEY_W, KEY_UP],
 		"down": [KEY_S, KEY_DOWN],
-		"interact": [KEY_SPACE, KEY_E],
+		"interact": [KEY_SPACE],
+		"leave": [KEY_Q],  # leave a station / close a minigame or dialog (A/D are station choices)
+		"radar": [KEY_E],  # Bridge radar on/off while docked there
 		"run": [KEY_SHIFT],  # hold while walking
 		"skin": [KEY_K],  # cycle skins (until the character screen picks them)
 	},

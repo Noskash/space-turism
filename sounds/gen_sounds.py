@@ -319,6 +319,18 @@ def static():
     return [x * (1.0 if rng.random() > 0.03 else 2.2) for x in out]
 
 
+def hiss():
+    """Air venting through a hull breach, 1 s seamless: steady high hiss with a slow flutter."""
+    out = noise(1.0, volume=0.3, smooth=0.15, attack=0.0)
+    return [x * (0.8 + 0.2 * math.sin(2 * math.pi * 4 * i / len(out))) for i, x in enumerate(out)]
+
+
+def clank():
+    """Toolbox grabbed / put back: two metal knocks."""
+    knock = lambda f: mix(tone(f, f * 0.8, 0.09, wave_fn=tri, volume=0.4, curve=0.5), noise(0.04, volume=0.3, step=3))
+    return seq(knock(900), silence(0.05), knock(700))
+
+
 SOUNDS = {
     "ui_hover": ui_hover, "ui_click": ui_click,
     "step": step, "dock": dock, "undock": undock, "select": select, "toggle": toggle,
@@ -330,6 +342,7 @@ SOUNDS = {
     "orbit": orbit, "lever": lever, "creak": creak, "engine": engine,
     "remind": remind, "warn": warn, "chute": chute, "page": page,
     "siren": siren, "wave": wave_hit, "impact": impact, "static": static,
+    "hiss": hiss, "clank": clank,
 }
 
 if __name__ == "__main__":

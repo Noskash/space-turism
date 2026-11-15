@@ -1,6 +1,6 @@
 # Upgrade parts — spacecraft designer (pixel art, top-down)
 
-19 optional parts. Every file has a 1x original and an @4x copy. Scale only by whole
+20 optional parts. Every file has a 1x original and an @4x copy. Scale only by whole
 numbers with no smoothing (`image-rendering: pixelated` / `ctx.imageSmoothingEnabled = false`).
 
 Rules baked into the assets (see `parts_upgrades.json`):
@@ -22,5 +22,5 @@ Folders:
 |---|---|
 | Engineer (orange) | Large solar array, RTG, Large battery, Radiator/heater, Rad-hardened computer, Radiation shielding |
 | Comms (green) | High-gain dish, Small recorder, Large recorder, Relay radio |
-| Navigator (cyan) | Large tank, Star tracker, Reaction wheels |
+| Navigator (cyan) | Large tank, Star tracker, Reaction wheels, Whipple shield |
 | Scientist (purple) | High-res camera, Spectrometer, Radar sounder, Thermal imager, Magnetometer, Solar particle monitor |

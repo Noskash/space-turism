@@ -70,12 +70,12 @@ func _draw() -> void:
 		if not _powered:
 			text = "RADIO: NO POWER"
 		var font := UiFont.font()
-		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x
+		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(8)).x
 		var box := Rect2(POS.x - w / 2.0 - 3, POS.y - 22, w + 6, 10)
 		box.position.x = minf(box.position.x, 322.0 - box.size.x)
 		draw_rect(box, Color(0, 0, 0, 0.8))
 		draw_rect(box, Color("ffc640"), false, 1.0)
-		draw_string(font, Vector2(box.position.x + 3, box.position.y + 8), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color.WHITE)
+		draw_string(font, Vector2(box.position.x + 3, box.position.y + 8), text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(8), Color.WHITE)
 		var pulse := 0.5 + 0.5 * sin(_t * 6.0)
 		draw_arc(USE_POINT, REACH - 3, 0, TAU, 20, Color(1.0, 0.78, 0.25, 0.4 + 0.4 * pulse), 1.0)
 

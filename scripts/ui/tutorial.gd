@@ -148,7 +148,7 @@ func _input(event: InputEvent) -> void:
 				_next()
 			KEY_X:
 				_close(true)
-			KEY_ESCAPE:
+			KEY_ESCAPE, KEY_Q:
 				_close(false)
 	elif event is InputEventMouseMotion:
 		_hover = _button_at(_canvas.get_local_mouse_position())
@@ -202,13 +202,13 @@ func _draw_canvas() -> void:
 	var x := box.position.x + PAD
 	var y := box.position.y + 10.0
 	_canvas.draw_string(font, Vector2(x, y), str(pane.get("title", "")).to_upper(),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 9, ACCENT)
+			HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(9), ACCENT)
 	var page := "%d/%d" % [_index + 1, panes.size()]
 	_canvas.draw_string(font, Vector2(box.end.x - PAD - UiFont.width(page, 7), y), page,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color("6b7390"))
+			HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(7), Color("6b7390"))
 	y += 15.0
 	for line in lines:
-		_canvas.draw_string(font, Vector2(x, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1, BODY, Color("e8ecf8"))
+		_canvas.draw_string(font, Vector2(x, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(BODY), Color("e8ecf8"))
 		y += 10.0
 
 	# Buttons along the bottom edge.
@@ -228,7 +228,7 @@ func _button(id: String, text: String, size: int, color: Color) -> void:
 	var hot := _hover == id or (id == "next" and fmod(_time, 1.2) < 0.8)
 	_canvas.draw_rect(r, Color(color, 0.18 if hot else 0.08))
 	_canvas.draw_rect(r, Color(color, 0.9 if hot else 0.5), false, 1.0)
-	_canvas.draw_string(UiFont.font(), r.position + Vector2(4, 9), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
+	_canvas.draw_string(UiFont.font(), r.position + Vector2(4, 9), text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(size), color)
 
 
 ## Darken everything except `hole`.

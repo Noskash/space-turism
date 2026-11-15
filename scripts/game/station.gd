@@ -65,7 +65,15 @@ func can_reach(point: Vector2) -> bool:
 
 
 func has_alert() -> bool:
-	return _offline or not _ticket.is_empty() or _dodging()
+	return _offline or not _ticket.is_empty() or _dodging() or _send_alert()
+
+
+## Comms while a DSN station is in view and science is waiting in the recorder: the downlink is
+## not a ticket, so without this nothing pulls anyone to the Comms room (playtest: SENT 0 all game).
+func _send_alert() -> bool:
+	return role == "comms" and str(_state.get("dsn", {}).get("site", "")) != "" \
+			and float(_state.get("data", 0)) > 25.0 and _state.get("loads", {}).get("transmitter", false) \
+			and not _downlinking and not _state.get("cme", {}).get("shields", false)
 
 
 ## Navigator while comet debris is coming (warning, or waiting for a pilot).
@@ -167,7 +175,8 @@ func _process(delta: float) -> void:
 			_work_id = -1  # ticket expired or was replaced while we worked
 			_progress = 0.0
 		else:
-			_progress += delta / maxf(float(_ticket.work_time), 0.1)
+			var pace: float = Astronauts.dose("sick_slowdown") if (_docked and _docked.get("sick")) else 1.0
+			_progress += delta * pace / maxf(float(_ticket.work_time), 0.1)
 			_tick_left -= delta
 			if _tick_left <= 0.0:
 				_tick_left = 0.12
@@ -190,6 +199,9 @@ func _watch_games() -> void:
 		var game := DodgeGame.new()
 		game.wheels = _dust.get("wheels", false)
 		game.tracker = _dust.get("tracker", false)
+		game.mass = float(_dust.get("mass", DodgeGame.REF_MASS))
+		game.hull = float(_dust.get("hull", 100.0))
+		game.density = float(_dust.get("density", 1.0))
 		game.finished.connect(func(result: Dictionary) -> void:
 			_send({type = "dodge_result", hits = result.hits, thrust = result.thrust, turning = result.turning}))
 		_open(game)
@@ -247,6 +259,9 @@ func _on_state_changed(state: Dictionary) -> void:
 		# Repairs first: an offline station can do nothing else.
 		if _ticket.is_empty() or (event.repair and not _ticket.repair):
 			_ticket = event
+	# A running storm minigame shows the sim's real countdown, not its own drifting copy.
+	if (_game is ShieldGame or _game is SafeModeGame) and _ticket.get("kind", "") in ["shields", "safe_mode"]:
+		_game.deadline = float(_ticket.time_left)
 
 
 func _load_names() -> Array:
@@ -278,7 +293,10 @@ func _draw() -> void:
 func _draw_bubble() -> void:
 	var center := Vector2(0, -radius - 10)
 	var ticket := _ticket
-	if ticket.is_empty():  # alert from the dust stream: show its countdown instead
+	if ticket.is_empty() and role == "comms":  # DSN pass: the ring runs out with the pass
+		var pass_left: float = _state.get("dsn", {}).get("time_left", 0.0)
+		ticket = {time_left = pass_left, duration = maxf(pass_left, 9.0)}
+	elif ticket.is_empty():  # alert from the dust stream: show its countdown instead
 		var total: float = _dust.get("time_left", 0.0)
 		ticket = {time_left = total, duration = maxf(total, 12.0)}
 	var urgent: bool = _offline or (ticket.time_left >= 0.0 and ticket.time_left < 4.0)
@@ -299,9 +317,24 @@ func _draw_panel() -> void:
 	if _ticket.get("kind", "") == "shields":
 		lines.append("RADIATION STORM IN %ds" % ceili(_ticket.time_left))
 		lines.append("SPACE: RAISE SHIELDS")
+	elif _ticket.get("kind", "") == "science_window" and not _state.get("loads", {}).get("instruments", false):
+		lines.append(_ticket.title.to_upper())
+		lines.append("INSTRUMENTS OFF - ENGINEER!")
+	elif _ticket.get("kind", "") == "science_window" and float(_state.get("data", 0)) > 95.0:
+		lines.append("STORAGE FULL - IT'D BE LOST")
+		lines.append("HOLD SPACE: OBSERVE ANYWAY")
 	elif _ticket.get("kind", "") == "safe_mode":
 		lines.append("RADIATION STORM IN %ds" % ceili(_ticket.time_left))
 		lines.append("SPACE: SAFE MODE")
+	elif _ticket.get("kind", "") == "moi":
+		lines.append("MARS! BRAKE IN %ds" % ceili(_ticket.time_left))
+		if float(_state.get("power", 0)) < 10.0:
+			lines.append("BATTERY TOO LOW - ENGINEER!")
+		else:
+			lines.append("HOLD SPACE: BRAKE (FUEL %d%%)" % int(_state.get("fuel", 0)))
+	elif _ticket.get("kind", "") == "power_up":
+		lines.append("SYSTEMS OFF %ds" % ceili(_ticket.time_left))
+		lines.append("HOLD SPACE: POWER UP")
 	elif not _ticket.is_empty():
 		lines.append(_ticket.title.to_upper())
 		lines.append("HOLD SPACE: " + ("REPAIR" if _ticket.repair else "FIX"))
@@ -309,7 +342,7 @@ func _draw_panel() -> void:
 		match _dust.get("phase", ""):
 			"warning":
 				lines.append("DEBRIS IN %ds" % ceili(_dust.get("time_left", 0)))
-				lines.append("STAY DOCKED: YOU FLY")
+				lines.append("E: RADAR · A/D: BURN")
 			_:
 				lines.append("FLYING THROUGH DEBRIS")
 	elif _offline:
@@ -318,6 +351,7 @@ func _draw_panel() -> void:
 		match role:
 			"navigator":
 				lines.append("< BURN >")
+				lines.append("E: RADAR")
 			"engineer":
 				var loads := _load_names()
 				if not loads.is_empty():
@@ -327,21 +361,37 @@ func _draw_panel() -> void:
 					lines.append("SPACE: SWITCH")
 			"comms":
 				var dsn: Dictionary = _state.get("dsn", {})
-				if dsn.get("site", "") != "":
+				if _state.get("cme", {}).get("shields", false):
+					lines.append("SHIELDS UP")
+					lines.append("NO RADIO TILL STORM ENDS")
+				elif not _state.get("loads", {}).get("transmitter", true):
+					# Safe mode / blackout / brownout switch it off and it stays off: say so here.
+					lines.append("TRANSMITTER OFF")
+					lines.append("ASK THE ENGINEER")
+				elif dsn.get("site", "") != "":
 					lines.append("DSN %s %ds" % [dsn.site, ceili(dsn.time_left)])
 					lines.append("HOLD SPACE: DOWNLINK")
 				else:
 					lines.append("NO DSN - NEXT %ds" % ceili(dsn.get("time_left", 0)))
 			"scientist":
-				lines.append("NO TARGET")
+				if not _state.get("loads", {}).get("instruments", false):
+					lines.append("INSTRUMENTS OFF")
+					lines.append("ASK THE ENGINEER")
+				elif float(_state.get("data", 0)) > 25.0:
+					# Playtest: players looked for "send" here. Sending is the Comms room's job.
+					lines.append("STORAGE %d%%" % int(_state.get("data", 0)))
+					lines.append("SEND IT FROM COMMS ROOM")
+				else:
+					lines.append("NO TARGET")
+					lines.append("STORAGE %d%%" % int(_state.get("data", 0)))
 			_:
 				lines.append(label_text)
 
 	var font := UiFont.font()
 	var width := 0.0
 	for line in lines:
-		width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x)
-	var line_h := 8.0
+		width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x)
+	var line_h := maxf(8.0, UiFont.px(FONT_SIZE) + 1.0)   # grows with the TEXT SIZE setting
 	var box := Rect2(-width / 2.0 - 3, -radius - 6 - line_h * lines.size() - 2,
 			width + 6, line_h * lines.size() + 3)
 	if has_alert():
@@ -355,11 +405,11 @@ func _draw_panel() -> void:
 	for i in lines.size():
 		var hint := lines[i].begins_with("HOLD") or lines[i].begins_with("SPACE")
 		var col := Color("9aa4b8") if hint else Color.WHITE
-		_text_centered(Vector2(shift, box.position.y + 8 + line_h * i), lines[i], col)
+		_text_centered(Vector2(shift, box.position.y + line_h + line_h * i), lines[i], col)
 
 
 func _text_centered(pos: Vector2, text: String, col: Color) -> void:
 	var font := UiFont.font()
-	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
+	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x
 	draw_string(font, Vector2(roundf(pos.x - w / 2.0), roundf(pos.y)), text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, col)
+			HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE), col)
