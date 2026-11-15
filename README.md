@@ -2,6 +2,11 @@
 
 **▶ Play in your browser: https://web-production-c47e249c.up.railway.app**
 
+| Trailer | Gameplay |
+|---|---|
+| [![Space Tourism – official trailer](https://img.youtube.com/vi/WSROwOI0oCw/maxresdefault.jpg)](https://youtu.be/WSROwOI0oCw) | [![Space Tourism – dev gameplay](https://img.youtube.com/vi/XHM6aNS92Pk/maxresdefault.jpg)](https://youtu.be/XHM6aNS92Pk) |
+| [Watch the trailer on YouTube](https://youtu.be/WSROwOI0oCw) | [Watch the gameplay on YouTube](https://youtu.be/XHM6aNS92Pk) |
+
 An educational co-op game about designing and flying a NASA-style Mars mission, made for the
 NASA Space Apps Challenge. 1–4 players, each with a crew role, work together like a kitchen crew in
 Overcooked — except the kitchen is a spacecraft on its way to Mars.
