@@ -1,6 +1,18 @@
 # Space Tourism
 
-**▶ Play in your browser: https://web-production-c47e249c.up.railway.app**
+## Play
+
+| Where | How |
+|---|---|
+| 🌐 **Browser** (PC, Mac) | **https://web-production-c47e249c.up.railway.app** — nothing to install |
+| 📱 **Phone / tablet** | Open the **same link** in Chrome or Safari and turn the phone sideways. On-screen joystick and buttons appear automatically. |
+| 🪟 **Windows** | **[Download SpaceTourism-windows.zip](https://github.com/Noskash/space-turism/releases/latest/download/SpaceTourism-windows.zip)** · [all releases](https://github.com/Noskash/space-turism/releases) |
+
+**Windows download:** unzip it and run `SpaceTourism.exe`. Nothing to install. The exe isn't signed, so Windows may show
+*"Windows protected your PC"* — click **More info → Run anyway**.
+
+**Co-op across devices:** the host creates a room and everyone else types the **4-letter code**, so a phone can join
+a friend on a PC. Everyone needs the same game version: the lobby shows a short build code, and it must match.
 
 | Trailer | Gameplay |
 |---|---|
@@ -46,11 +58,7 @@ plus a sandbox with every hazard switchable.
 | G | ping your team |
 | ESC | menu (codex, briefing, settings) |
 
-Phones and tablets get on-screen touch controls.
-
-## Playing together
-
-The host creates a room and gets a **4-letter code**; friends type the code to join from anywhere.
+On phones and tablets: joystick on the left half of the screen (push to the rim to run), **USE** button on the right.
 
 ## Built with
 
