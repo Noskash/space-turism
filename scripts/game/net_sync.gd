@@ -79,19 +79,19 @@ func _on_host_event_ended(id_text: String) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_ready() -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		_ready_peers[multiplayer.get_remote_sender_id()] = true
 
 
 @rpc("any_peer", "call_remote", "reliable")
 func _submit_action(role: String, action: Dictionary) -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		Events.action_requested.emit(role, action)
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _crew_to_host(snapshot: Array) -> void:
-	if not Network.is_host():
+	if not is_inside_tree() or not Network.is_host():   # packet during a scene change
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	crew_received.emit(sender, snapshot)

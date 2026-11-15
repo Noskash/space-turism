@@ -112,7 +112,7 @@ func _want_pause(on: bool) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _report_pause(on: bool) -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		_host_set(multiplayer.get_remote_sender_id(), on)
 
 

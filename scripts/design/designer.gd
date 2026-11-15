@@ -311,7 +311,7 @@ func _send_cursor(delta: float) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_ready() -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		var id := multiplayer.get_remote_sender_id()
 		_ready_peers[id] = true
 		_recv_design.rpc_id(id, design, ready_by)
@@ -319,7 +319,7 @@ func _client_ready() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _request(action: Dictionary) -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		_host_apply(multiplayer.get_remote_sender_id(), action)
 
 
@@ -330,7 +330,7 @@ func _recv_design(new_design: Dictionary, new_ready: Dictionary) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _cursor_to_host(c: Vector2i) -> void:
-	if not Network.is_host():
+	if not is_inside_tree() or not Network.is_host():   # packet during a scene change
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	cursors[sender] = c

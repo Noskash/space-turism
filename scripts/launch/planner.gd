@@ -63,11 +63,13 @@ var _stars: Array[Vector3] = []
 
 
 func _enter_tree() -> void:
+	UiFont.max_level = 1   # dense screen: TEXT SIZE stops at LARGE here (as in the designer)
 	if not embedded:
 		_saved_window = PixelMode.enter(get_window())
 
 
 func _exit_tree() -> void:
+	UiFont.max_level = 2
 	if not embedded:
 		PixelMode.exit(get_window(), _saved_window)
 
@@ -389,7 +391,10 @@ func _label_out(at: Vector2, text: String, col: Color) -> void:
 	var p := at + dir * 9.0
 	p.x -= w * (0.5 - 0.5 * dir.x)          # right side: text starts at the point; left side: ends there
 	p.y += 3.0 + 4.0 * dir.y
+	var free_x := p.x
 	p.x = clampf(p.x, 10.0, 252.0 - w)
+	if absf(p.x - free_x) > 6.0:   # no room beside it (panel edge): put the label under the point
+		p = Vector2(clampf(at.x - w / 2.0, 10.0, 252.0 - w), at.y + 8.0 + UiKit.ascent(FONT_SIZE))
 	p.y = clampf(p.y, 26.0, 198.0)
 	_text(p, text, col)
 
@@ -420,11 +425,11 @@ func _draw_numbers(r: Rect2, e: Dictionary) -> void:
 	var w := r.size.x - 12
 	_text(Vector2(x, y), "LAUNCH DATE", DIM)
 	_text_right(Vector2(x + w, y), str(e.date), Color.WHITE)
-	y += 9
+	y += _step(9)
 	var days := int(e.offset) - LaunchWindow.best_offset(e.speed)
 	var off_text := "ON THE BEST DAY" if days == 0 else "%d DAYS %s THE BEST DAY" % [absi(days), "AFTER" if days > 0 else "BEFORE"]
 	_text(Vector2(x, y), off_text, GOOD if absi(days) <= 6 else DIM)
-	y += 13
+	y += _step(13)
 	_text(Vector2(x, y), "PATH", DIM)
 	var px := x + 40
 	for id: String in LaunchWindow.ORDER:
@@ -432,44 +437,45 @@ func _draw_numbers(r: Rect2, e: Dictionary) -> void:
 		var on: bool = id == e.speed
 		var label := "%s %dD" % [p.name, int(p.trip)]
 		var lw := _font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x + 6
-		draw_rect(Rect2(px, y - 8, lw, 11), Color(CYAN, 0.18) if on else Color(0, 0, 0, 0))
-		draw_rect(Rect2(px, y - 8, lw, 11), CYAN if on else LINE, false, 1.0)
+		var chip := Rect2(px, y - _step(8), lw, _step(11))
+		draw_rect(chip, Color(CYAN, 0.18) if on else Color(0, 0, 0, 0))
+		draw_rect(chip, CYAN if on else LINE, false, 1.0)
 		_text(Vector2(px + 3, y), label, Color.WHITE if on else DIM)
 		px += lw + 4
-	y += 14
+	y += _step(14)
 	_text(Vector2(x, y), "MARS AHEAD OF EARTH", DIM)
 	_text_right(Vector2(x + w, y), "%d° (NEED %d°)" % [roundi(e.lead), roundi(e.ideal_lead)],
 			GOOD if absf(float(e.lead_error)) < 3.0 else WARN)
-	y += 13
+	y += _step(13)
 	_text(Vector2(x, y), "DEPARTURE PUSH", DIM)
 	_text_right(Vector2(x + w, y), "%.1f KM/S" % float(e.dv), Color.WHITE)
-	y += 9
+	y += _step(9)
 	_text(Vector2(x, y), "ROCKET GIVES", DIM)
 	_text_right(Vector2(x + w, y), "%.1f KM/S" % float(e.rocket_dv), Color.WHITE)
-	y += 9
+	y += _step(9)
 	_text(Vector2(x, y), "SHIP'S TANK BURNS", DIM)
 	_text_right(Vector2(x + w, y), "%d%% FUEL" % ceili(e.fuel_cost), GOOD if e.fuel_cost <= 0.5 else (BAD if not e.ok else WARN))
-	y += 9
+	y += _step(9)
 	_text(Vector2(x, y), "MARS BRAKE NEEDS", DIM)
 	_text_right(Vector2(x + w, y), "%d%% FUEL%s" % [ceili(e.moi), "" if e.moi_mult <= 1.0 else " (x%.1f)" % e.moi_mult], Color.WHITE)
-	y += 9
+	y += _step(9)
 	var left := 100.0 - float(e.fuel_cost)
 	_text(Vector2(x, y), "TANK AFTER DEPARTURE", DIM)
 	_text_right(Vector2(x + w, y), "~%d%%" % maxi(roundi(left), 0), GOOD if left >= float(e.moi) + 15.0 else (WARN if left >= float(e.moi) else BAD))
-	y += 6
+	y += _step(6)
 	_bar(Rect2(x, y, w, 4), left / 100.0, float(e.moi) / 100.0)
-	y += 14
-	_text(Vector2(x, y), str(e.verdict), _cost_color(e) if e.ok and e.fuel_cost > 0.5 else (GOOD if e.ok else BAD))
-	y += 10
+	y += _step(14)
+	y = _wrapped(Vector2(x, y), str(e.verdict), w, _cost_color(e) if e.ok and e.fuel_cost > 0.5 else (GOOD if e.ok else BAD)) - _step(9)
+	y += _step(10)
 	if embedded:   # the console also picks the Mars orbit (it sets the brake burn above)
 		var o := Orbits.info(Orbits.id_of(design))
 		_text(Vector2(x, y), "MARS ORBIT", DIM)
 		_text_right(Vector2(x + w, y), "%s  [SPACE]" % str(o.get("name", "")), CYAN)
-		y += 10
-		_wrapped(Vector2(x, y), str(o.get("desc", "")), w, DIM)
+		y += _step(10)
+		_wrapped(Vector2(x, y), str(o.get("desc", "")), w, DIM, r.end.y - 3)
 		return
 	_wrapped(Vector2(x, y), str(e.path.desc) + " Launch tank assumed full; the climb to orbit uses some (launch pad).",
-			w, DIM)
+			w, DIM, r.end.y - 3)
 
 
 ## Fuel bar: what is left after departure, with a marker at what the Mars brake needs.
@@ -516,8 +522,9 @@ func _draw_chart(r: Rect2, e: Dictionary) -> void:
 func _draw_footer() -> void:
 	if embedded:
 		var keys := "A/D DATE  W/S PATH  SPACE ORBIT  Q CLOSE" if can_drive else "ONLY THE NAVIGATOR CHANGES THE PLAN   Q CLOSE"
-		_text(Vector2(8, 262), "READY UP AT THE LAUNCH DOOR WHEN THE PLAN IS SET", DIM)
 		_text_right(Vector2(472, 262), keys, CYAN if can_drive else DIM)
+		var room := 464.0 - UiKit.text_w(keys, FONT_SIZE) - 12.0
+		_text(Vector2(8, 262), UiKit.fit("READY UP AT THE LAUNCH DOOR WHEN THE PLAN IS SET", FONT_SIZE, room), DIM)
 		_draw_message()
 		return
 	var ids := roles.keys()
@@ -530,14 +537,16 @@ func _draw_footer() -> void:
 		_text(Vector2(x, 262), text, GOOD if ok else CrewRoles.color(roles[id]))
 		x += _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x + 12
 	var hint := "A/D DATE  W/S PATH  SPACE READY" if _can_drive(_me) else "NAVIGATOR PLANS  SPACE READY"
-	_text_right(Vector2(472, 262), hint, DIM)
+	if x + UiKit.text_w(hint, FONT_SIZE) < 470.0:
+		_text_right(Vector2(472, 262), hint, DIM)
 	_draw_message()
 
 
 func _draw_message() -> void:
 	if _message_time > 0.0:
 		var w := _font.get_string_size(_message, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x
-		draw_rect(Rect2(240 - w / 2 - 6, 118, w + 12, 14), Color(0, 0, 0, 0.8))
+		var h := UiKit.line_h(FONT_SIZE) + 4
+		draw_rect(Rect2(240 - w / 2 - 6, 128 - h + 4, w + 12, h), Color(0, 0, 0, 0.8))
 		_text(Vector2(240 - w / 2, 128), _message, WARN)
 
 
@@ -555,18 +564,18 @@ func _text_right(pos: Vector2, text: String, color: Color) -> void:
 	_text(Vector2(pos.x - w, pos.y), text, color)
 
 
-func _wrapped(pos: Vector2, text: String, width: float, color: Color) -> float:
-	var line := ""
+## Word-wrapped text; lines below `max_y` (baseline) are dropped. Returns the y below the last line.
+func _wrapped(pos: Vector2, text: String, width: float, color: Color, max_y := INF) -> float:
 	var y := pos.y
-	for word in text.split(" "):
-		var trial := word if line == "" else line + " " + word
-		if _font.get_string_size(trial, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(FONT_SIZE)).x > width and line != "":
+	for line in UiKit.wrap(text, FONT_SIZE, width):
+		if y > max_y:
+			break
+		if line != "":
 			_text(Vector2(pos.x, y), line, color)
-			y += 9
-			line = word
-		else:
-			line = trial
-	if line != "":
-		_text(Vector2(pos.x, y), line, color)
-		y += 9
+			y += _step(9)
 	return y
+
+
+## A vertical gap that grows a bit with TEXT SIZE (not fully, so the panels still fit).
+func _step(n: float) -> float:
+	return roundf(n * lerpf(1.0, UiFont.scale(), 0.85))

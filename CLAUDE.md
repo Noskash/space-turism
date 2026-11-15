@@ -89,6 +89,9 @@ over also return here). The menu Designer (`designer.tscn` → `planner.tscn`) s
 - Co-op: host owns `{design, plan, ready_by, carried}`; actions `take / return / install / remove / class / orbit / date /
   speed / ready`; crew snapshots relayed through the host at 20 Hz. A player who leaves drops their part back on the shelf.
 - New key: F = `inspect` (Controls). Tutorial id "hangar" (7 panes); MissionBriefing first, as in the designer.
+- TEXT SIZE: board numbers are painted into fixed map boxes (`SIGN_PX` 6, ignore the setting); the F card is laid
+  out from rows (`_card_rows`) so it grows with the text; prompts sit on a dark plate. The planner (both modes) caps
+  TEXT SIZE at LARGE (`UiFont.max_level = 1`, like the designer) and its gaps grow with `_step()`.
 
 ## Launch window planner (built 2026-11-15, `scenes/launch/planner.tscn`)
 Flow: Hangar planner console (overlay) → launch pad → cruise; standalone screen kept for the old Designer. SIMPLIFIED physics, labelled on screen. Maths in `LaunchWindow`

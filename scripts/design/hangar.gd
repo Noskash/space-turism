@@ -26,7 +26,8 @@ const PLAYER_SKINS := ["friend_1", "friend_2", ""]
 const CREW_SEND := 1.0 / 20.0
 const BAY_REACH := 14.0       # take a fitted part off: its cell centre within this of the feet
 const CONSOLE_REACH := 16.0
-const CARD_SIZE := Vector2(156, 92)
+const CARD_W := 156.0        # F card width at NORMAL text (grows with TEXT SIZE; height fits the content)
+const SIGN_PX := 6           # board text: painted into fixed boxes on the map, so it ignores TEXT SIZE
 
 var design := DesignRules.new_design()
 var plan := LaunchWindow.default_plan()
@@ -547,7 +548,7 @@ func _on_room_changed() -> void:
 # --- network -----------------------------------------------------------------------------
 
 func _send_crew(delta: float) -> void:
-	if not Network.is_in_room() or _local == null:
+	if not Network.is_in_room() or _local == null or _launching:
 		return
 	_send_timer -= delta
 	if _send_timer > 0.0:
@@ -563,7 +564,7 @@ func _send_crew(delta: float) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_ready() -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		var id := multiplayer.get_remote_sender_id()
 		_ready_peers[id] = true
 		_recv_state.rpc_id(id, _state())
@@ -571,7 +572,7 @@ func _client_ready() -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _request(action: Dictionary) -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		_host_apply(multiplayer.get_remote_sender_id(), action)
 
 
@@ -587,7 +588,9 @@ func _recv_say(text: String) -> void:
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _crew_to_host(snap: Array) -> void:
-	if not Network.is_host():
+	# A packet can still arrive while the scene is being swapped out (launch / leave):
+	# the node is out of the tree then and has no `multiplayer`.
+	if not is_inside_tree() or not Network.is_host():
 		return
 	var sender := multiplayer.get_remote_sender_id()
 	_crew_from_host(sender, snap)
@@ -651,7 +654,7 @@ func _draw_board() -> void:
 	var ev := DesignRules.evaluate(design)
 	var cls := DesignRules.class_info(design.ship_class)
 	var cr := _rect(f.get("class", {}))
-	UiKit.text_r(self, cr.end.x, cr.end.y, str(cls.get("name", "")).to_upper(), 6, Color.WHITE, 0)
+	_sign(Vector2(cr.end.x, cr.end.y), str(cls.get("name", "")).to_upper(), Color.WHITE, true)
 	var net: float = ev.net_w
 	var left: float = ev.budget - ev.cost
 	var rows := {
@@ -671,12 +674,18 @@ func _draw_board() -> void:
 			col = UiKit.BAD
 		draw_rect(Rect2(bar.position, Vector2(roundf(bar.size.x * clampf(fill, 0.0, 1.0)), bar.size.y)), col)
 		var vr := _rect(field.get("value", {}))
-		UiKit.text(self, Vector2(vr.position.x, vr.end.y), str(row[1]), 6, col if col == UiKit.BAD else Color.WHITE, 0)
+		_sign(Vector2(vr.position.x, vr.end.y), str(row[1]), col if col == UiKit.BAD else Color.WHITE)
 	var rr := _rect(f.get("rocket", {}))
 	var launcher: Dictionary = ev.launcher
 	var rname := "NONE" if launcher.is_empty() else str(launcher.get("id", "")).to_upper()
-	UiKit.text(self, Vector2(rr.position.x, rr.end.y), UiKit.fit(rname, 6, rr.size.x + 6), 6,
-			UiKit.BAD if launcher.is_empty() else Color.WHITE, 0)
+	_sign(Vector2(rr.position.x, rr.end.y), rname, UiKit.BAD if launcher.is_empty() else Color.WHITE)
+
+
+## Board text in the map's fixed boxes (right = `pos` is the right edge).
+func _sign(pos: Vector2, text: String, col: Color, right := false) -> void:
+	var f := UiFont.font()
+	var w := f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, SIGN_PX).x
+	draw_string(f, Vector2(pos.x - (w if right else 0.0), pos.y).round(), text, HORIZONTAL_ALIGNMENT_LEFT, -1, SIGN_PX, col)
 
 
 func _draw_door() -> void:
@@ -785,8 +794,9 @@ func _draw_prompt() -> void:
 	var info: bool = t.kind in ["take", "remove", "install", "return", "class", "console", "ready"]
 	var fw := UiKit.keycap_size("F", 6).x + 2 + UiKit.text_w("INFO", 6) + 6 if info else 0.0
 	var total := cap.x + 2 + vw + fw
-	var x := roundf(clampf(top.x - total / 2.0, 2.0, 478.0 - total))
+	var x := roundf(clampf(top.x - total / 2.0, 4.0, 476.0 - total))
 	var y := roundf(top.y)
+	UiKit.panel(_fx, Rect2(x - 3, y - cap.y, total + 6, cap.y + 4), UiKit.PANEL_DARK)   # readable over busy art
 	UiKit.keycap(_fx, Vector2(x, y - cap.y + 2), "SPACE", 6, ok)
 	UiKit.text(_fx, Vector2(x + cap.x + 2, y), verb, 6, Color.WHITE if ok else UiKit.DIM)
 	if info:
@@ -816,90 +826,120 @@ func _draw_footer() -> void:
 			text = "! " + why
 			col = UiKit.BAD
 		elif ready_by.size() < roles.size():
-			text = "SHIP + PLAN OK - EVERYONE TO THE LAUNCH DOOR (%d/%d READY)" % [ready_by.size(), roles.size()]
+			text = "SHIP + PLAN OK - ALL TO THE LAUNCH DOOR (%d/%d)" % [ready_by.size(), roles.size()]
 			col = UiKit.GOOD
 	if text == "":
 		return
+	# between the SCI and NAV racks (x 128..382)
+	text = UiKit.fit(text, 7, 244.0)
 	var w := UiKit.text_w(text, 7) + 10
-	var r := Rect2(roundf(255 - w / 2.0), 254, roundf(w), 12)
+	var h := UiKit.line_h(7) + 4
+	var r := Rect2(roundf(255 - w / 2.0), 267 - h, roundf(w), h)
 	UiKit.panel(_ui, r, UiKit.PANEL_DARK, col)
-	UiKit.text_c(_ui, 255, r.end.y - 3, text, 7, col, 0)
+	UiKit.text_c(_ui, 255, r.end.y - 4, text, 7, col, 0)
 
 
 ## F card next to the player: part, ship class, console or launch door.
+## Rows are laid out first, so the card grows with TEXT SIZE instead of spilling out.
 func _draw_card(t: Dictionary) -> void:
+	var w := roundf(CARD_W * lerpf(1.0, UiFont.scale(), 0.7))
+	var inner := w - 14.0
+	var rows := _card_rows(t, inner)
+	if rows.is_empty():
+		return
+	var body := rows.slice(1)
+	var h := _layout_rows(body, Vector2.ZERO, false) + 6.0
 	var feet := _local.position
-	var pos := Vector2(clampf(feet.x - CARD_SIZE.x / 2.0, 4.0, 476.0 - CARD_SIZE.x),
-			feet.y - 40.0 - CARD_SIZE.y if feet.y > 140.0 else feet.y + 12.0)
-	pos.y = clampf(pos.y, 4.0, 250.0 - CARD_SIZE.y)
-	var r := Rect2(pos.round(), CARD_SIZE)
+	var pos := Vector2(clampf(feet.x - w / 2.0, 4.0, 476.0 - w),
+			feet.y - 40.0 - h if feet.y > 140.0 else feet.y + 12.0)
+	pos.y = clampf(pos.y, 4.0, 250.0 - h)
+	var r := Rect2(pos.round(), Vector2(w, roundf(h)))
 	_ui.draw_style_box(_card_box, r)
-	var x := r.position.x + 7
-	var w := r.size.x - 14
-	var y := r.position.y + 11
+	var title: Dictionary = rows[0]
+	var x := r.position.x + 7.0
+	UiKit.text(_ui, Vector2(x, r.position.y + 11), UiKit.fit(str(title.text), 7, inner - 24.0), 7, Color.WHITE, 0)
+	if title.has("tag"):
+		UiKit.text_r(_ui, r.end.x - 7, r.position.y + 11, str(title.tag), 7, title.tag_col, 0)
+	_layout_rows(body, Vector2(x, r.position.y), true)
+
+
+## Places the card's body rows below the header band (from `origin` = left edge, card top);
+## draws them when `draw` is true. Returns the height used, measured from the card top.
+func _layout_rows(body: Array, origin: Vector2, draw: bool) -> float:
+	var y := 17.0
+	var icon_bottom := 0.0
+	for row: Dictionary in body:
+		if row.has("icon"):
+			if draw:
+				_ui.draw_texture(row.icon, origin + Vector2(0, y))
+			icon_bottom = y + 34.0
+			continue
+		if row.get("clear", false):
+			y = maxf(y, icon_bottom)
+		y += float(row.get("gap", 0.0)) + UiKit.line_h(int(row.size))
+		if draw:
+			UiKit.text(_ui, origin + Vector2(float(row.get("x", 0.0)), y - 2.0), str(row.text), int(row.size), row.col, 0)
+	return maxf(y, icon_bottom)
+
+
+## Card content: rows[0] = title {text, tag?, tag_col?}; then {text, size, col, x?, gap?, clear?} or {icon}.
+func _card_rows(t: Dictionary, inner: float) -> Array:
+	var rows: Array = []
 	match str(t.kind):
 		"take", "remove", "install", "return":
 			var id := str(t.part)
 			var p := DesignRules.part(id)
 			var role := str(p.get("role", ""))
-			UiKit.text(_ui, Vector2(x, y), UiKit.fit(str(p.get("name", id)).to_upper(), 7, w - 26), 7, Color.WHITE, 0)
-			UiKit.text_r(_ui, r.end.x - 7, y, CrewRoles.tag(role), 7, CrewRoles.color(role), 0)
+			rows.append({text = str(p.get("name", id)).to_upper(), tag = CrewRoles.tag(role), tag_col = CrewRoles.color(role)})
 			var icon := DesignRules.texture(str(p.get("dir", "")) + str(p.get("icon", "")))
 			if icon:
-				_ui.draw_texture(icon, Vector2(x, y + 5))
-			var tx := x + 36
+				rows.append({icon = icon})
 			var pw := int(p.get("power_w", 0))
-			UiKit.text(_ui, Vector2(tx, y + 14), "+%d KG" % p.get("mass_kg", 0), 7, Color("4fd8ff"), 0)
-			UiKit.text(_ui, Vector2(tx, y + 23), "%s%d W" % ["+" if pw >= 0 else "", pw], 7, UiKit.GOOD if pw >= 0 else UiKit.BAD, 0)
-			UiKit.text(_ui, Vector2(tx, y + 32), "$%dM" % p.get("cost", 0), 7, Color("ffc640"), 0)
-			var yy := y + 44
-			for line in UiKit.wrap(str(p.get("desc", "")), 6, w):
-				if yy > r.end.y - 14:
-					break
-				UiKit.text(_ui, Vector2(x, yy), line, 6, UiKit.DIM, 0)
-				yy += 8
+			rows.append({text = "+%d KG" % p.get("mass_kg", 0), size = 7, col = Color("4fd8ff"), x = 36.0, gap = 2.0})
+			rows.append({text = "%s%d W" % ["+" if pw >= 0 else "", pw], size = 7, col = UiKit.GOOD if pw >= 0 else UiKit.BAD, x = 36.0})
+			rows.append({text = "$%dM" % p.get("cost", 0), size = 7, col = Color("ffc640"), x = 36.0})
+			var lines := UiKit.wrap(str(p.get("desc", "")), 6, inner)
+			for i in lines.size():
+				rows.append({text = lines[i], size = 6, col = UiKit.DIM, clear = i == 0, gap = 3.0 if i == 0 else 0.0})
 			var status := "FITTED ON THE SHIP" if id in design.upgrades else DesignRules.check_add(design, id)
 			if status == "":
 				status = "FITS - CARRY IT TO THE BAY"
-			UiKit.text(_ui, Vector2(x, r.end.y - 5), status, 6, UiKit.GOOD if status.begins_with("F") else UiKit.BAD, 0)
+			rows.append({text = UiKit.fit(status, 6, inner), size = 6, clear = true, gap = 3.0,
+					col = UiKit.GOOD if status.begins_with("F") else UiKit.BAD})
 		"class":
 			var cls := DesignRules.class_info(str(t.id))
-			UiKit.text(_ui, Vector2(x, y), "%s SHIP" % str(cls.get("name", "")).to_upper(), 7, Color.WHITE, 0)
-			var yy := y + 13
+			rows.append({text = "%s SHIP" % str(cls.get("name", "")).to_upper()})
 			for line in ["UPGRADE SLOTS: %d" % cls.get("upgrade_slots", 0), "EMPTY MASS: %d KG" % cls.get("dry_mass_kg", 0),
 					"MASS LIMIT: %d KG" % cls.get("mass_limit_kg", 0), "PRICE: $%dM" % cls.get("cost", 0)]:
-				UiKit.text(_ui, Vector2(x, yy), line, 6, UiKit.DIM, 0)
-				yy += 9
-			yy += 3
-			for line in UiKit.wrap("Switching drops the parts that no longer fit back on their shelves.", 6, w):
-				UiKit.text(_ui, Vector2(x, yy), line, 6, UiKit.DIM, 0)
-				yy += 8
+				rows.append({text = line, size = 6, col = UiKit.TEXT})
+			_dim_rows(rows, "Switching drops the parts that no longer fit back on their shelves.", inner)
 		"console":
 			var e := LaunchWindow.evaluate(design, plan)
-			UiKit.text(_ui, Vector2(x, y), "LAUNCH WINDOW PLANNER", 7, Color.WHITE, 0)
-			var yy := y + 13
+			rows.append({text = "LAUNCH WINDOW PLANNER"})
 			for line in ["DATE: %s" % e.date, "PATH: %s (%d DAYS)" % [e.path.name, int(e.trip_days)],
 					"SHIP BURNS: %d%% FUEL" % ceili(e.fuel_cost), "MARS BRAKE: %d%% FUEL" % ceili(e.moi),
 					"ORBIT: %s" % str(Orbits.info(Orbits.id_of(design)).get("name", ""))]:
-				UiKit.text(_ui, Vector2(x, yy), line, 6, UiKit.DIM, 0)
-				yy += 9
-			UiKit.text(_ui, Vector2(x, r.end.y - 5), "NAVIGATOR: SPACE TO PLAN", 6, CrewRoles.color("navigator"), 0)
+				rows.append({text = UiKit.fit(line, 6, inner), size = 6, col = UiKit.TEXT})
+			rows.append({text = "NAVIGATOR: SPACE TO PLAN", size = 6, col = CrewRoles.color("navigator"), gap = 4.0})
 		"ready":
-			UiKit.text(_ui, Vector2(x, y), "LAUNCH DOOR", 7, Color.WHITE, 0)
-			var yy := y + 13
+			rows.append({text = "LAUNCH DOOR"})
 			var problems: Array = DesignRules.evaluate(design).errors.duplicate()
 			if not LaunchWindow.evaluate(design, plan).ok:
 				problems.append("IMPOSSIBLE LAUNCH DATE")
 			if problems.is_empty():
-				problems = ["SHIP AND PLAN OK"]
-			for p: String in problems:
-				for line in UiKit.wrap(p, 6, w):
-					UiKit.text(_ui, Vector2(x, yy), line, 6, UiKit.GOOD if p == "SHIP AND PLAN OK" else UiKit.BAD, 0)
-					yy += 8
-			yy += 4
-			for line in UiKit.wrap("Everyone presses SPACE here. Any change to the ship or the plan un-readies all.", 6, w):
-				UiKit.text(_ui, Vector2(x, yy), line, 6, UiKit.DIM, 0)
-				yy += 8
+				rows.append({text = "SHIP AND PLAN OK", size = 6, col = UiKit.GOOD})
+			for prob: String in problems:
+				for line in UiKit.wrap(prob, 6, inner):
+					rows.append({text = line, size = 6, col = UiKit.BAD})
+			_dim_rows(rows, "Everyone presses SPACE here. Any change to the ship or the plan un-readies all.", inner)
+	return rows
+
+
+func _dim_rows(rows: Array, text: String, inner: float) -> void:
+	var gap := 4.0
+	for line in UiKit.wrap(text, 6, inner):
+		rows.append({text = line, size = 6, col = UiKit.DIM, gap = gap})
+		gap = 0.0
 
 
 # --- helpers -----------------------------------------------------------------------------

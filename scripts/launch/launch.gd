@@ -611,13 +611,13 @@ func _network(delta: float) -> void:
 
 @rpc("any_peer", "call_remote", "reliable")
 func _client_ready() -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		_ready_peers[multiplayer.get_remote_sender_id()] = true
 
 
 @rpc("any_peer", "call_remote", "unreliable_ordered")
 func _send_lever(value: float) -> void:
-	if Network.is_host():
+	if is_inside_tree() and Network.is_host():
 		levers[multiplayer.get_remote_sender_id()] = clampf(value, 0.0, 1.0)
 
 
