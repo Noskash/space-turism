@@ -1,9 +1,14 @@
 extends Node
-## Сетевая игра по IP: создание комнаты, подключение к ней и список игроков.
+## Сетевая игра: создание комнаты, подключение к ней и список игроков.
 ## Подключён автозагрузкой под именем Network, поэтому живёт между сценами.
 ##
 ## Создатель комнаты — сервер (peer id 1), остальные игроки — клиенты.
 ## Список игроков и выбранный уровень хранит сервер и рассылает клиентам.
+##
+## Два способа связи, вся игра (RPC) работает одинаково поверх обоих:
+## - через интернет (online = true): сервер-ретранслятор relay/server.js на Railway выдаёт
+##   код комнаты из 4 букв (RelayPeer, WebSocket);
+## - по локальной сети: ENet по IP-адресу и порту 7777.
 
 ## Изменился список игроков или данные комнаты.
 signal room_changed
@@ -15,6 +20,8 @@ signal join_failed(reason: String)
 signal room_closed(reason: String)
 ## Создатель комнаты начал полёт — пора загружать уровень.
 signal game_started
+## Сервер-ретранслятор выдал код комнаты (только создателю, игра через интернет).
+signal code_received(code: String)
 
 enum State { OFFLINE, HOSTING, CONNECTING, JOINED }
 
@@ -26,6 +33,20 @@ const VIRTUAL_ADAPTER_HINTS := ["virtualbox", "vmware", "vethernet", "hyper-v", 
 		"loopback", "bluetooth"]
 ## Подсказка, если подключиться не выходит.
 const FIREWALL_HINT := "На компьютере с комнатой сеть должна быть «Частной», а игре — разрешён доступ в брандмауэре."
+## Сервер-ретранслятор для игры через интернет (Railway, проект space-turism-relay).
+## Переопределяется запуском с --relay=ws://127.0.0.1:8080 (локальный тест: cd relay && npm start).
+const RELAY_URL := "wss://space-turism-relay-production.up.railway.app"
+## Почему не вышло подключиться через ретранслятор (RelayPeer.last_error → текст).
+const RELAY_ERRORS := {
+	"no_room": "Комнаты с таким кодом нет. Проверь код у создателя комнаты.",
+	"full": "Комната заполнена: в ней уже 4 игрока.",
+	"locked": "В этой комнате полёт уже начался.",
+	"busy": "Сервер занят или было слишком много попыток. Подожди минуту.",
+	"unreachable": "Сервер игры через интернет не отвечает. Проверь интернет.",
+	"lost": "Связь с сервером игры через интернет пропала.",
+	"host_left": "Создатель закрыл комнату.",
+	"expired": "Комната закрыта: она открыта больше 3 часов.",
+}
 
 ## На каком адресе сервер ждёт подключений. «*» — на всех сетевых картах.
 var bind_address := "*"
@@ -37,6 +58,12 @@ var level: LevelData
 var level_number := 1
 ## Сообщение для следующего экрана (например, почему пропала связь).
 var pending_message := ""
+## Создавать комнаты через интернет (код комнаты) или по локальной сети (IP).
+var online := true
+## Код комнаты через интернет ("" — пока не выдан или комната по IP).
+var room_code := ""
+## Адрес ретранслятора (RELAY_URL или --relay=...).
+var relay_url := RELAY_URL
 
 var _next_player_number := 1
 var _connect_timer: Timer
@@ -55,6 +82,10 @@ func _ready() -> void:
 	multiplayer.connection_failed.connect(_on_connection_failed)
 	multiplayer.server_disconnected.connect(_on_server_disconnected)
 
+	for arg in OS.get_cmdline_args() + OS.get_cmdline_user_args():
+		if arg.begins_with("--relay="):
+			relay_url = arg.trim_prefix("--relay=")
+
 
 func is_host() -> bool:
 	return state == State.HOSTING
@@ -69,14 +100,20 @@ func my_id() -> int:
 
 
 ## Создать комнату с выбранным уровнем. Возвращает OK или код ошибки.
+## Через интернет код комнаты придёт позже сигналом code_received (лобби уже можно открывать).
 func create_room(level_data: LevelData, number: int, port := DEFAULT_PORT) -> Error:
 	leave_room()
-	var peer := ENetMultiplayerPeer.new()
-	peer.set_bind_ip(bind_address)
-	var error := peer.create_server(port, MAX_PLAYERS - 1)
-	if error != OK:
-		return error
-	multiplayer.multiplayer_peer = peer
+	if online:
+		var relay := RelayPeer.host(relay_url)
+		relay.code_received.connect(_on_code_received)
+		multiplayer.multiplayer_peer = relay
+	else:
+		var peer := ENetMultiplayerPeer.new()
+		peer.set_bind_ip(bind_address)
+		var error := peer.create_server(port, MAX_PLAYERS - 1)
+		if error != OK:
+			return error
+		multiplayer.multiplayer_peer = peer
 	state = State.HOSTING
 	level = level_data
 	level_number = number
@@ -86,10 +123,29 @@ func create_room(level_data: LevelData, number: int, port := DEFAULT_PORT) -> Er
 	return OK
 
 
-## Подключиться к комнате по адресу «192.168.1.5» или «192.168.1.5:7777».
+## Создатель в лобби, пока никто не вошёл: переключить комнату между интернетом и локальной сетью.
+func set_online(value: bool) -> Error:
+	if online == value:
+		return OK
+	online = value
+	if not is_host():
+		return OK
+	var error := create_room(level, level_number)
+	if error != OK:   # например, порт 7777 занят — возвращаемся к интернету
+		online = not value
+		create_room(level, level_number)
+	return error
+
+
+## Подключиться к комнате по коду «KRMX» (через интернет) или по адресу «192.168.1.5[:7777]».
 ## Результат придёт сигналом joined_room или join_failed.
 func join_room(address: String) -> Error:
 	leave_room()
+	if RelayPeer.looks_like_code(address):
+		multiplayer.multiplayer_peer = RelayPeer.join(relay_url, address)
+		state = State.CONNECTING
+		_connect_timer.start()
+		return OK
 	var parsed := parse_address(address)
 	if parsed.is_empty():
 		return ERR_INVALID_PARAMETER
@@ -106,12 +162,19 @@ func join_room(address: String) -> Error:
 ## Выйти из комнаты. Если это создатель — комната закрывается для всех.
 func leave_room() -> void:
 	_connect_timer.stop()
-	if multiplayer.multiplayer_peer is ENetMultiplayerPeer:
-		multiplayer.multiplayer_peer.close()
+	var peer := multiplayer.multiplayer_peer
+	if peer is ENetMultiplayerPeer or peer is RelayPeer:
+		peer.close()
 	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
 	state = State.OFFLINE
 	players = {}
 	level = null
+	room_code = ""
+
+
+## Комната через интернет (код), а не по IP.
+func is_online_room() -> bool:
+	return multiplayer.multiplayer_peer is RelayPeer
 
 
 ## Только для создателя: начать полёт у всех игроков.
@@ -125,7 +188,7 @@ func start_game() -> void:
 ## Только для создателя: пускать ли новых игроков.
 func set_room_open(open: bool) -> void:
 	if is_host():
-		(multiplayer.multiplayer_peer as ENetMultiplayerPeer).refuse_new_connections = not open
+		multiplayer.multiplayer_peer.refuse_new_connections = not open
 
 
 ## Локальные IPv4-адреса этого компьютера — их создатель называет друзьям.
@@ -195,21 +258,40 @@ func _on_connected_to_server() -> void:
 	pass
 
 
+func _on_code_received(code: String) -> void:
+	room_code = code
+	code_received.emit(code)
+	room_changed.emit()
+
+
+## Текст ошибки ретранслятора ("" — комната не через интернет или причина неизвестна).
+func _relay_error() -> String:
+	var peer := multiplayer.multiplayer_peer
+	if peer is RelayPeer:
+		return str(RELAY_ERRORS.get((peer as RelayPeer).last_error, ""))
+	return ""
+
+
 func _on_connection_failed() -> void:
 	if state == State.CONNECTING:
+		var relay := _relay_error()
 		leave_room()
-		join_failed.emit("Не удалось подключиться. Проверь адрес. " + FIREWALL_HINT)
+		join_failed.emit(relay if relay != "" else "Не удалось подключиться. Проверь адрес. " + FIREWALL_HINT)
 
 
 func _on_connect_timeout() -> void:
 	if state == State.CONNECTING:
+		var relay := multiplayer.multiplayer_peer is RelayPeer
 		leave_room()
-		join_failed.emit("Комната не отвечает. Проверь адрес и что вы в одной сети. " + FIREWALL_HINT)
+		join_failed.emit(RELAY_ERRORS.unreachable if relay \
+				else "Комната не отвечает. Проверь адрес и что вы в одной сети. " + FIREWALL_HINT)
 
 
 func _on_server_disconnected() -> void:
+	var relay := _relay_error()
 	leave_room()
-	pending_message = "Связь с комнатой пропала: создатель её закрыл или пропала сеть."
+	pending_message = relay if relay != "" \
+			else "Связь с комнатой пропала: создатель её закрыл или пропала сеть."
 	room_closed.emit(pending_message)
 
 
