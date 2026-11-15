@@ -69,14 +69,16 @@ var _stars: Array[Vector3] = []
 
 func _enter_tree() -> void:
 	_saved_window = PixelMode.enter(get_window())
+	UiFont.max_level = 1  # dense grid: TEXT SIZE stops at LARGE here
 
 
 func _exit_tree() -> void:
 	PixelMode.exit(get_window(), _saved_window)
+	UiFont.max_level = 2
 
 
 func _ready() -> void:
-	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	UiKit.setup_canvas(self)
 	Controls.ensure_actions()
 	_font = UiFont.font()
 	_preview = ShipPreview.new()
@@ -97,7 +99,7 @@ func _ready() -> void:
 		if not Network.is_host():
 			_client_ready.rpc_id(1)
 	_apply_design(design, {})
-	PauseMenu.attach(self, "LEAVE TO MAIN MENU")
+	PauseMenu.attach(self, "LEAVE TO MAIN MENU", "WASD MOVE · SPACE PICK · H HELP")
 	Tutorial.attach(self, "designer", [
 		{title = "Build your spacecraft", rect = Rect2(6, 16, 164, 132),
 		 body = "Together you design ONE ship. Every part costs mass, power AND budget - there is no free upgrade."},
@@ -343,7 +345,7 @@ func _draw() -> void:
 	for s in _stars:
 		draw_rect(Rect2(s.x, s.y, 1, 1), Color(0.8, 0.85, 1.0, 0.25 + 0.4 * maxf(sin(_time * 1.3 + s.z), 0.0)))
 	var title := "DESIGN YOUR SPACECRAFT"
-	_text(Vector2(8, 11), title, Color.WHITE)
+	UiKit.text(self, Vector2(8, 12), title, 9, Color.WHITE, 2)
 	var level_title := (Network.level.title if Network.is_in_room() and Network.level else "MARS").to_upper()
 	_text_right(Vector2(472, 11), "MISSION: " + level_title + "   H: HELP", DIM)
 
@@ -377,7 +379,7 @@ func _draw_stats(r: Rect2, ev: Dictionary) -> void:
 	y += 16
 	_text(Vector2(x, y), "SLOTS %d / %d" % [ev.slots_used, ev.slots], Color.WHITE)
 	for i in ev.slots:
-		draw_rect(Rect2(x + 64 + i * 7, y - 6, 5, 5), Color.WHITE if i < ev.slots_used else LINE)
+		UiKit.chip(self, Rect2(x + 64 + i * 7, y - 7, 6, 6), Color.WHITE if i < ev.slots_used else UiKit.WELL)
 	y += 14
 	var launcher: Dictionary = ev.launcher
 	if launcher.is_empty():
@@ -451,7 +453,7 @@ func _draw_detail(r: Rect2) -> void:
 func _draw_catalog(ev: Dictionary) -> void:
 	for col in COLUMNS.size():
 		var x := 4 + col * COL_W
-		var r := Rect2(x, CATALOG_Y, COL_W - 3, 96)
+		var r := Rect2(x, CATALOG_Y, COL_W - 3, 90)
 		var role_id: String = COLUMNS[col].id
 		var mine := _can_use_column(_me, col)
 		var accent := Color.WHITE if col == 0 else CrewRoles.color(role_id)
@@ -477,11 +479,16 @@ func _draw_catalog(ev: Dictionary) -> void:
 				COL_W - 5 - inset * 2, ROW_H - inset * 2)
 		var color := CrewRoles.color(roles.get(peer, "all"))
 		if peer == _me:
-			var pulse := 0.7 + 0.3 * sin(_time * 8.0)
-			draw_rect(rect, Color(Color.WHITE, pulse), false, 1.0)
+			# Your cursor: chunky 2 px frame that nudges in and out.
+			var g := rect.grow(1.0 if fmod(_time, 0.5) < 0.25 else 0.0)
+			_frame_rect(g, Color.WHITE, 2)
 		else:
-			draw_rect(rect, color, false, 1.0)
-			_text_right(Vector2(rect.end.x - 2, rect.position.y + 9), "P%d" % (_player_index(peer) + 1), color)
+			_frame_rect(rect, color, 1)
+			var tag := "P%d" % (_player_index(peer) + 1)
+			var tw := UiKit.text_w(tag, 6) + 4
+			var tr := Rect2(rect.end.x - tw, rect.position.y - 3, tw, 8)
+			UiKit.chip(self, tr, color)
+			UiKit.text(self, Vector2(tr.position.x + 2, tr.end.y - 1), tag, 6, UiKit.INK, 0)
 
 
 func _draw_item(item: String, at: Vector2, usable: bool, accent: Color) -> void:
@@ -500,36 +507,56 @@ func _draw_item(item: String, at: Vector2, usable: bool, accent: Color) -> void:
 		on = item in design.upgrades
 		label = SHORT_NAMES.get(item, item)
 		possible = on or DesignRules.check_add(design, item) == ""
-	var box := Rect2(at + Vector2(0, -5), Vector2(5, 5))
+	var box := Rect2(at + Vector2(0, -6), Vector2(6, 6))
 	if on:
-		draw_rect(box, accent)
+		UiKit.chip(self, box, accent)
 	else:
-		draw_rect(box, accent if usable else DIM, false, 1.0)
+		UiKit.chip(self, box, UiKit.WELL)
+		draw_rect(Rect2(box.position + Vector2(1, 1), Vector2(4, 1)), Color(accent if usable else DIM, 0.6))
 	var color := Color.WHITE if usable and possible else DIM
 	if item == "ready" and on:
 		color = GOOD
-	_text(at + Vector2(9, 0), label, color)
+	_text(at + Vector2(9, 0), UiKit.fit(label, FONT_SIZE, COL_W - 20), color)
 
 
 func _draw_footer(ev: Dictionary) -> void:
-	var y := 246
+	var y := 253
 	if _message_time > 0.0:
 		_text(Vector2(8, y), _message, BAD if not _launching else GOOD)
 	elif not ev.errors.is_empty():
 		_text(Vector2(8, y), "! " + str(ev.errors[0]), BAD)
 	else:
 		_text(Vector2(8, y), "SHIP OK - EVERYONE PRESS READY", GOOD)
+	# One chip per player: role colour, green when READY.
 	var ids := roles.keys()
 	ids.sort()
-	var x := 8.0
+	var x := 6.0
+	var h := maxf(11.0, UiKit.line_h(7) + 3)
 	for i in ids.size():
 		var id: int = ids[i]
-		var text := "P%d %s %s" % [i + 1, CrewRoles.tag(roles[id]), "READY" if ready_by.get(id, false) else "NOT READY"]
-		if id == _me:
-			text = "> " + text
-		_text(Vector2(x, 260), text, GOOD if ready_by.get(id, false) else CrewRoles.color(roles[id]))
-		x += _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x + 12
-	_text_right(Vector2(472, 260), "WASD move · SPACE pick · ESC menu", DIM)
+		var ready: bool = ready_by.get(id, false)
+		var text := "P%d %s %s" % [i + 1, CrewRoles.tag(roles[id]), "READY" if ready else "NOT READY"]
+		var col := CrewRoles.color(roles[id])
+		var w := UiKit.text_w(text, 7) + 10
+		var r := Rect2(x, 268 - h, roundf(w), h)
+		UiKit.panel(self, r, Color("123320") if ready else UiKit.PANEL, GOOD if ready else col)
+		UiKit.chip(self, Rect2(r.position.x + 2, r.position.y + 2, 3, h - 4), GOOD if ready else col)
+		UiKit.text(self, Vector2(r.position.x + 7, r.end.y - 3), text, 7, GOOD if ready else Color.WHITE, 0)
+		if id == _me:  # small arrow over your own chip
+			var cx := roundf(r.get_center().x)
+			draw_colored_polygon(PackedVector2Array([Vector2(cx - 2, r.position.y - 4), Vector2(cx + 3, r.position.y - 4),
+					Vector2(cx + 0.5, r.position.y - 1)]), Color.WHITE)
+		x = r.end.x + 4
+	# Controls as key caps, bottom right.
+	var keys := [["WASD", "MOVE"], ["SPACE", "PICK"], ["ESC", "MENU"]]
+	var kx := 474.0
+	for j in range(keys.size() - 1, -1, -1):
+		var label: String = keys[j][1]
+		var lw := UiKit.text_w(label, 6)
+		UiKit.text(self, Vector2(kx - lw, 266), label, 6, DIM, 0)
+		var cap := UiKit.keycap_size(keys[j][0], 6)
+		UiKit.keycap(self, Vector2(kx - lw - 2 - cap.x, 266 - cap.y + 2), keys[j][0], 6)
+		kx -= lw + 2 + cap.x + 6
 
 
 func _player_index(peer: int) -> int:
@@ -538,42 +565,42 @@ func _player_index(peer: int) -> int:
 	return ids.find(peer)
 
 
-# --- tiny drawing helpers --------------------------------------------------------------
+# --- tiny drawing helpers (UI kit) -----------------------------------------------------
 
 func _panel(r: Rect2, border := LINE) -> void:
-	draw_rect(r, PANEL)
-	draw_rect(r, border, false, 1.0)
+	UiKit.panel(self, r, PANEL, border if border != LINE else Color(0, 0, 0, 0))
 
 
+## Segmented bar; over 100% the whole bar turns red.
 func _bar(r: Rect2, fill: float, color: Color) -> void:
-	draw_rect(r, LINE)
 	var over := fill > 1.0
-	draw_rect(Rect2(r.position, Vector2(roundf(r.size.x * clampf(fill, 0.0, 1.0)), r.size.y)),
-			BAD if over else color)
+	var segs := maxi(int(r.size.x / 6.0), 4)
+	UiKit.seg_bar(self, Rect2(r.position.x, r.position.y - 1, r.size.x, 6), clampf(fill, 0.0, 1.0),
+			BAD if over else color, segs)
+
+
+func _frame_rect(r: Rect2, col: Color, width: int) -> void:
+	r = Rect2(r.position.round(), r.size.round())
+	draw_rect(Rect2(r.position, Vector2(r.size.x, width)), col)
+	draw_rect(Rect2(r.position.x, r.end.y - width, r.size.x, width), col)
+	draw_rect(Rect2(r.position, Vector2(width, r.size.y)), col)
+	draw_rect(Rect2(r.end.x - width, r.position.y, width, r.size.y), col)
 
 
 func _text(pos: Vector2, text: String, color: Color) -> void:
-	draw_string(_font, pos.round(), text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, color)
+	UiKit.text(self, pos, text, FONT_SIZE, color, 0)
 
 
 func _text_right(pos: Vector2, text: String, color: Color) -> void:
-	var w := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
-	_text(Vector2(pos.x - w, pos.y), text, color)
+	UiKit.text_r(self, pos.x, pos.y, text, FONT_SIZE, color, 0)
 
 
 ## Word-wrapped text; returns the y below the last line.
 func _wrapped(pos: Vector2, text: String, width: float, color: Color) -> float:
-	var line := ""
 	var y := pos.y
-	for word in text.split(" "):
-		var trial := word if line == "" else line + " " + word
-		if line != "" and _font.get_string_size(trial, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x > width:
+	var lh := maxf(9.0, UiKit.line_h(FONT_SIZE) - 1)
+	for line in UiKit.wrap(text, FONT_SIZE, width):
+		if line != "":
 			_text(Vector2(pos.x, y), line, color)
-			y += 9
-			line = word
-		else:
-			line = trial
-	if line != "":
-		_text(Vector2(pos.x, y), line, color)
-		y += 9
+			y += lh
 	return y

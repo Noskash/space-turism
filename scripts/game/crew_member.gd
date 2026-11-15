@@ -30,6 +30,8 @@ var ship_map: ShipMap
 var remote := false
 ## Draw a small marker over the head (which one is me, in co-op).
 var show_marker := false
+## Player name for the role-coloured name tag ("" = no tag, e.g. offline).
+var display_name := ""
 ## Run key held while moving (synced, so others see the faster animation).
 var running := false
 
@@ -42,6 +44,7 @@ var _alarm_left := 0.0
 var _anim_moving := false
 var _anim_special := ""
 var _net_target := Vector2.ZERO
+var _tag: Node2D                 # name tag / marker, drawn above the lighting
 
 
 func _ready() -> void:
@@ -56,6 +59,11 @@ func _ready() -> void:
 	add_child(collider)
 	_apply_skin()
 	Events.event_started.connect(_on_event_started)
+	# Name tag + "this is me" marker on their own node above the ship lighting (z 40/41).
+	_tag = Node2D.new()
+	_tag.z_index = 45
+	_tag.draw.connect(_draw_tag)
+	add_child(_tag)
 
 
 func _physics_process(delta: float) -> void:
@@ -240,10 +248,8 @@ func _exit_tree() -> void:
 
 func _draw() -> void:
 	var c := role_color()
-	if show_marker:
-		var y := -20.0 if _sprite else -19.0
-		draw_colored_polygon(PackedVector2Array([Vector2(-2, y), Vector2(3, y), Vector2(0.5, y + 3)]),
-				Color.WHITE)
+	if _tag:
+		_tag.queue_redraw()
 	_draw_ellipse(Vector2(0, -1), Vector2(5, 2), Color(0, 0, 0, 0.35))  # shadow
 	_draw_ellipse_outline(Vector2(0, -1), Vector2(6, 2.5), Color(c, 0.8))  # role ring
 	if _sprite:
@@ -253,6 +259,24 @@ func _draw() -> void:
 	draw_rect(Rect2(-3, -15, 6, 5), Color("f0f0f0"))           # helmet
 	var visor := Vector2(-2, -14) + Vector2(_facing.x, maxf(_facing.y, 0)).round()
 	draw_rect(Rect2(visor, Vector2(4, 2)), Color("1b2a4a"))    # visor shows facing
+
+
+## Role-coloured name tag over the head (co-op) and a white arrow over your own crew member.
+func _draw_tag() -> void:
+	var c := role_color()
+	var top := -20.0 if _sprite else -19.0
+	if show_marker:
+		_tag.draw_colored_polygon(PackedVector2Array([Vector2(-2, top), Vector2(3, top), Vector2(0.5, top + 3)]),
+				Color.WHITE)
+		top -= 2
+	if display_name == "":
+		return
+	var label := display_name.to_upper()
+	var w := UiKit.text_w(label, 6) + 6
+	var h := maxf(9.0, UiKit.line_h(6) + 2)
+	var r := Rect2(roundf(-w / 2.0), top - h, roundf(w), h)
+	UiKit.panel(_tag, r, UiKit.PANEL_DARK, c)
+	UiKit.text(_tag, Vector2(r.position.x + 3, r.end.y - 2), label, 6, c, 0)
 
 
 func _draw_ellipse(center: Vector2, radii: Vector2, color: Color) -> void:

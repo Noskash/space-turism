@@ -66,16 +66,21 @@ func _draw() -> void:
 		draw_rect(Rect2(p + Vector2(1, -4), Vector2(1, 4)), Color(1.0, 0.85, 0.45, a))
 	# Prompt for the local player standing next to it.
 	if _local_near():
-		var text := "SPACE: RADIO " + ("OFF" if _on else "ON")
+		var text := "RADIO " + ("OFF" if _on else "ON")
 		if not _powered:
 			text = "RADIO: NO POWER"
-		var font := UiFont.font()
-		var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8).x
-		var box := Rect2(POS.x - w / 2.0 - 3, POS.y - 22, w + 6, 10)
+		var key := Controls.key_name("p1", "interact")
+		var cap_sz := UiKit.keycap_size(key, 6)
+		var w := UiKit.text_w(text, 7) + (cap_sz.x + 3 if _powered else 0.0)
+		var h := maxf(11.0, UiKit.line_h(7) + 3)
+		var box := Rect2(roundf(POS.x - w / 2.0 - 3), POS.y - 14 - h, roundf(w + 6), h)
 		box.position.x = minf(box.position.x, 322.0 - box.size.x)
-		draw_rect(box, Color(0, 0, 0, 0.8))
-		draw_rect(box, Color("ffc640"), false, 1.0)
-		draw_string(font, Vector2(box.position.x + 3, box.position.y + 8), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color.WHITE)
+		UiKit.panel(self, box, UiKit.PANEL, UiKit.WARN)
+		var x := box.position.x + 3
+		if _powered:
+			UiKit.keycap(self, Vector2(x, box.position.y + roundf((h - cap_sz.y) / 2.0)), key, 6)
+			x += cap_sz.x + 3
+		UiKit.text(self, Vector2(x, box.end.y - 3), text, 7, UiKit.TEXT, 0)
 		var pulse := 0.5 + 0.5 * sin(_t * 6.0)
 		draw_arc(USE_POINT, REACH - 3, 0, TAU, 20, Color(1.0, 0.78, 0.25, 0.4 + 0.4 * pulse), 1.0)
 

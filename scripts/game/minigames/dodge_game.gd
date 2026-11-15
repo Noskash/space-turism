@@ -41,13 +41,14 @@ var _shake := 0.0
 var _done := false
 var _outro := 0.0
 var _rng := RandomNumberGenerator.new()
+var _frame := MinigameFrame.new("COMET DEBRIS", "fly", Color("4fd8ff"), false)
 
 
 func _ready() -> void:
 	layer = 15
 	_rng.randomize()
 	_canvas = Node2D.new()
-	_canvas.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	UiKit.setup_canvas(_canvas)
 	_canvas.draw.connect(_draw_game)
 	add_child(_canvas)
 	for i in 70:
@@ -67,6 +68,7 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	_t += delta
+	_frame.step(delta)
 	_shake = maxf(_shake - delta * 3.0, 0.0)
 	_invuln = maxf(_invuln - delta, 0.0)
 	for i in _stars.size():
@@ -94,6 +96,8 @@ func _process(delta: float) -> void:
 		_done = true
 		Sfx.set_loop("rocket", false)
 		Sfx.play("fixed" if _hits == 0 else "orbit")
+		_frame.stamp("CLEAR!" if _hits == 0 else "%d HIT%s" % [_hits, "" if _hits == 1 else "S"],
+				UiKit.GOOD if _hits == 0 else Color("ff8a5c"))
 	_canvas.queue_redraw()
 
 
@@ -229,25 +233,22 @@ func _draw_ship(at: Vector2) -> void:
 
 func _draw_hud() -> void:
 	var c := _canvas
-	var font := UiFont.font()
 	var left := clampf(duration - maxf(_t, 0.0), 0.0, duration)
-	var bar := Rect2(140, 10, 200, 5)
-	c.draw_rect(bar, Color(1, 1, 1, 0.15))
-	c.draw_rect(Rect2(bar.position, Vector2(bar.size.x * left / duration, bar.size.y)), Color("4fd8ff"))
-	var title := "SURVIVE %.1fs" % left
-	c.draw_string(font, Vector2(240 - UiFont.width(title, 9) / 2.0, 28), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color.WHITE)
-	var hits := "HITS %d" % _hits
-	c.draw_string(font, Vector2(470 - UiFont.width(hits, 9), 16), hits, HORIZONTAL_ALIGNMENT_LEFT, -1, 9,
-			Color("ff5050") if _hits > 0 else Color("9aa4b8"))
-	c.draw_string(font, Vector2(10, 16), "COMET DEBRIS · SIMPLIFIED", HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color("6b7390"))
-	var hint := "A/D TURN · W THRUST · S BRAKE"
-	c.draw_string(font, Vector2(240 - UiFont.width(hint, 8) / 2.0, 262), hint, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("9aa4b8"))
+	_frame.draw_bar(c, left, duration, "HITS %d" % _hits, UiKit.BAD if _hits > 0 else UiKit.DIM)
+	UiKit.text_c(c, 240, 36, "SURVIVE %.1fs" % left, 9, UiKit.TEXT)
+	# Controls as key caps along the bottom, the part that helps on the left.
+	var keys := [["A/D", "TURN"], ["W", "THRUST"], ["S", "BRAKE"]]
+	var total := 0.0
+	for k: Array in keys:
+		total += UiKit.keycap_size(k[0], 7).x + 3 + UiKit.text_w(k[1], 7) + 8
+	var x := roundf(240 - total / 2.0)
+	for k: Array in keys:
+		var cap := UiKit.keycap(c, Vector2(x, 252), k[0], 7)
+		UiKit.text(c, Vector2(cap.end.x + 3, cap.end.y - 2), k[1], 7, UiKit.DIM)
+		x = cap.end.x + 3 + UiKit.text_w(k[1], 7) + 8
 	var part := "REACTION WHEELS: FAST TURNS, NO FUEL" if wheels else "THRUSTERS: TURNING BURNS FUEL"
-	c.draw_string(font, Vector2(10, 262), part, HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Color("6b7390"))
+	UiKit.text(c, Vector2(6, 244), part, 6, UiKit.DIM, 0)
+	UiKit.text(c, Vector2(6, 236), "SIMPLIFIED: REAL COMET DEBRIS IS MOSTLY DUST", 6, UiKit.FAINT.lightened(0.2), 0)
 	if _t < 0.0:
-		var t := "DODGE THE DEBRIS!"
-		c.draw_string(font, Vector2(240 - UiFont.width(t, 16) / 2.0, 120), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("ffc640"))
-	elif _done:
-		var t := "CLEAR - NO HITS!" if _hits == 0 else "THROUGH - %d HIT%s" % [_hits, "" if _hits == 1 else "S"]
-		c.draw_string(font, Vector2(240 - UiFont.width(t, 16) / 2.0, 120), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16,
-				Color("5cf07a") if _hits == 0 else Color("ff8a5c"))
+		UiKit.text_c(c, 240, 124, "DODGE THE DEBRIS!", 16, UiKit.WARN, 3)
+	_frame.draw_stamp(c, Vector2(240, 120))

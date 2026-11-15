@@ -29,6 +29,8 @@ var _shake := 0.0
 var _done := false
 var _outro := 0.0
 var _rng := RandomNumberGenerator.new()
+var _frame := MinigameFrame.new("ENTER SAFE MODE", "safe", Color("ff9a3c"))
+var _total := 0.0              # deadline when the game opened (for the bar)
 
 
 func _ready() -> void:
@@ -42,7 +44,9 @@ func _ready() -> void:
 		_order.append(i)
 	_order.shuffle()
 	_cursor = count / 2
+	_total = deadline
 	_canvas = Node2D.new()
+	UiKit.setup_canvas(_canvas)
 	_canvas.draw.connect(_draw_game)
 	add_child(_canvas)
 	Tutorial.hold(true)
@@ -65,6 +69,7 @@ func _process(delta: float) -> void:
 	deadline -= delta
 	_lock = maxf(_lock - delta, 0.0)
 	_flash = move_toward(_flash, 0.0, delta * 3.0)
+	_frame.step(delta)
 	_shake = maxf(_shake - delta * 4.0, 0.0)
 	if _done:
 		_outro += delta
@@ -72,6 +77,10 @@ func _process(delta: float) -> void:
 			finished.emit({ok = true})
 			queue_free()
 		_canvas.queue_redraw()
+		return
+	if _t > ARM_TIME and Input.is_action_just_pressed(Controls.action("p1", "close")):
+		Sfx.play("undock")
+		abort()  # closed: the ticket stays, anyone can open it again
 		return
 	if _t > ARM_TIME:
 		if Input.is_action_just_pressed(Controls.action("p1", "left")):
@@ -95,6 +104,7 @@ func _flip() -> void:
 		Sfx.play("toggle", 0.8 + _next * 0.12)
 		if _next >= _order.size():
 			_done = true
+			_frame.stamp("SAFE MODE", UiKit.GOOD)
 			Sfx.play("brownout", 1.4)
 	else:
 		_lock = LOCKOUT
@@ -105,56 +115,47 @@ func _flip() -> void:
 
 func _draw_game() -> void:
 	var c := _canvas
-	var font := UiFont.font()
-	c.draw_rect(Rect2(-8, -8, 496, 286), Color(0.02, 0.01, 0.0, 0.82))
-	var off := Vector2(sin(_t * 70.0) * 2.0 * _shake, 0)
-	var panel := Rect2(Vector2(80, 40) + off, Vector2(320, 186))
-	c.draw_rect(panel, Color("1a1410"))
-	c.draw_rect(panel, Color("ff9a3c"), false, 1.0)
-	_centered("ENTER SAFE MODE", 240 + off.x, 60, 14, Color("ff9a3c"))
-	var wave := "RADIATION WAVE IN %.1fs" % maxf(deadline, 0.0)
-	_centered(wave, 240 + off.x, 72, 8,
-			Color("ffe14a") if fmod(_t, 0.5) < 0.35 or deadline > 4.0 else Color("ff5050"))
+	var off := Vector2(roundf(sin(_t * 70.0) * 2.0 * _shake), 0)
+	_frame.draw(c, deadline, _total, "RADIATION WAVE IN %.1fs", off)
 
 	# Breaker row.
 	var n := _names.size()
 	var gap := 14.0
-	var x0 := 240.0 - (n * BREAKER.x + (n - 1) * gap) / 2.0 + off.x
-	var y0 := 92.0
+	var x0 := roundf(240.0 - (n * BREAKER.x + (n - 1) * gap) / 2.0 + off.x)
+	var y0 := 98.0
 	var target: int = _order[_next] if not _done else -1
 	for i in n:
 		var r := Rect2(x0 + i * (BREAKER.x + gap), y0, BREAKER.x, BREAKER.y)
 		var is_off: bool = _off[i]
 		var blink := i == target and fmod(_t, 0.4) < 0.25
-		c.draw_rect(r, Color("2a221c"))
-		c.draw_rect(r, Color("ffc640") if blink else Color("5a4a3a"), false, 1.0)
+		UiKit.panel(c, r, Color("2a221c"), UiKit.WARN if blink else Color("5a4a3a"))
 		# Status lamp: green = live, dark = cut, yellow = cut me next.
-		var lamp := r.position + Vector2(BREAKER.x / 2.0, 8)
-		c.draw_circle(lamp, 3.0, Color("2c2c2c") if is_off else (Color("ffc640") if blink else Color("5cf07a")))
+		var lamp := Rect2(r.position + Vector2(BREAKER.x / 2.0 - 3, 5), Vector2(6, 6))
+		UiKit.chip(c, lamp, Color("2c2c2c") if is_off else (UiKit.WARN if blink else UiKit.GOOD))
 		# Switch slot + lever (up = on, down = off).
 		var slot := Rect2(r.position + Vector2(BREAKER.x / 2.0 - 4, 16), Vector2(8, 24))
+		c.draw_rect(slot.grow(1), UiKit.INK)
 		c.draw_rect(slot, Color("0d0a08"))
 		var lever_y := slot.end.y - 9 if is_off else slot.position.y + 1
-		c.draw_rect(Rect2(slot.position.x - 2, lever_y, 12, 8), Color("8a93aa") if is_off else Color("e8ecf8"))
-		_centered(_names[i], r.get_center().x, r.end.y - 4, 7, Color("6b7390") if is_off else Color("e8ecf8"))
+		UiKit.chip(c, Rect2(slot.position.x - 2, lever_y, 12, 8), Color("8a93aa") if is_off else Color("e8ecf8"))
+		UiKit.text_c(c, r.get_center().x, r.end.y - 4, _names[i], 6, UiKit.DIM if is_off else UiKit.TEXT, 0)
 		# Order hint: the step number above each breaker once it is cut.
 		if is_off:
-			_centered("%d" % (_order.find(i) + 1), r.get_center().x, r.position.y - 3, 7, Color("5cf07a"))
+			UiKit.text_c(c, r.get_center().x, r.position.y - 3, "%d" % (_order.find(i) + 1), 7, UiKit.GOOD)
 		if i == _cursor and not _done:
-			var col := Color("ff5050") if _lock > 0.0 else Color.WHITE
-			c.draw_rect(r.grow(3), col, false, 1.0)
-			var tip := Vector2(r.get_center().x, r.end.y + 6)
+			var col := UiKit.BAD if _lock > 0.0 else Color.WHITE
+			var g := r.grow(3)
+			for e in [Rect2(g.position, Vector2(g.size.x, 2)), Rect2(g.position.x, g.end.y - 2, g.size.x, 2),
+					Rect2(g.position, Vector2(2, g.size.y)), Rect2(g.end.x - 2, g.position.y, 2, g.size.y)]:
+				c.draw_rect(e, col)
+			var tip := Vector2(roundf(r.get_center().x), r.end.y + 7)
 			c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-4, 5), tip + Vector2(4, 5)]), col)
 
 	if _flash != 0.0:
 		var fc := Color(0.36, 0.94, 0.48, _flash * 0.25) if _flash > 0.0 else Color(1, 0.3, 0.3, -_flash * 0.25)
-		c.draw_rect(panel, fc)
+		c.draw_rect(MinigameFrame.RECT.grow(-3), fc)
 	var hint := "SAFE MODE ON - SHIP POWERED DOWN" if _done else (
-			"WRONG BREAKER!" if _lock > 0.0 else "CUT THE BLINKING BREAKER: A/D MOVE · SPACE FLIP")
-	_centered(hint, 240 + off.x, 182, 9, Color("5cf07a") if _done else (Color("ff5050") if _lock > 0.0 else Color.WHITE))
-	_centered("BREAKERS %d / %d · SIMPLIFIED" % [_next, n], 240 + off.x, 198, 7, Color("6b7390"))
-
-
-func _centered(text: String, cx: float, y: float, size: int, col: Color) -> void:
-	_canvas.draw_string(UiFont.font(), Vector2(roundf(cx - UiFont.width(text, size) / 2.0), y), text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, size, col)
+			"WRONG BREAKER!" if _lock > 0.0 else "CUT THE BLINKING BREAKER: A/D MOVE · %s FLIP" % Controls.key_name("p1", "interact"))
+	_frame.draw_footer(c, hint, UiKit.GOOD if _done else (UiKit.BAD if _lock > 0.0 else UiKit.TEXT),
+			"BREAKERS %d / %d · SIMPLIFIED" % [_next, n], off)
+	_frame.draw_stamp(c, Vector2(240, 125))

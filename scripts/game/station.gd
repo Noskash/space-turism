@@ -9,15 +9,9 @@ extends Node2D
 ## The station reads the sim only through Events.state_changed and talks back only
 ## through Events.action_requested.
 
-const ROLE_COLORS := {
-	"navigator": Color("4fd8ff"),
-	"engineer": Color("ff9a3c"),
-	"comms": Color("5cf07a"),
-	"scientist": Color("b77bff"),
-	"team": Color("d8f4ff"),
-}
+const ROLE_COLORS := UiKit.ROLE_COLORS  # one palette for the whole UI (UiKit)
 const ALERT_COLOR := Color("ff4040")
-const FONT_SIZE := 8
+const FONT_SIZE := 7
 
 var role := ""
 var label_text := ""
@@ -26,6 +20,8 @@ var radius := 14.0
 var _visitors: Array[Node] = []
 var _docked: Node = null
 var _time := 0.0
+var _juice := UiJuice.new()
+var _shown_ticket := -1  # ticket id the bubble last popped for
 
 # Latest sim state relevant to this station.
 var _state := {}
@@ -161,6 +157,7 @@ func set_holding(on: bool) -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
+	_juice.step(delta)
 	_watch_games()
 	if _work_id != -1:
 		if _ticket.is_empty() or int(_ticket.id) != _work_id:
@@ -253,10 +250,51 @@ func _load_names() -> Array:
 	return _state.get("loads", {}).keys()
 
 
-# --- drawing ---------------------------------------------------------------------------
+## What the big action button (HUD, bottom right) shows while the local player is docked here:
+## {icon, verb, enabled, hold, sides, progress}. `sides` = the verb is on LEFT/RIGHT, not USE.
+func action_info() -> Dictionary:
+	var info := {icon = "use", verb = "USE", enabled = true, hold = false, sides = false, progress = work_progress()}
+	var kind: String = _ticket.get("kind", "")
+	if kind == "shields":
+		info.merge({icon = "shield", verb = "SHIELDS"}, true)
+	elif kind == "safe_mode":
+		info.merge({icon = "safe", verb = "SAFE MODE"}, true)
+	elif not _ticket.is_empty():
+		if _ticket.repair:
+			info.merge({icon = "repair", verb = "REPAIR", hold = true}, true)
+		elif kind == "science_window":
+			info.merge({icon = "observe", verb = "OBSERVE", hold = true}, true)
+		else:
+			info.merge({icon = "work", verb = "FIX", hold = true}, true)
+	elif _dodging() and not _offline:
+		info.merge({icon = "fly", verb = "YOU FLY", enabled = false}, true)
+	elif _offline:
+		info.merge({icon = "repair", verb = "OFFLINE", enabled = false}, true)
+	else:
+		match role:
+			"navigator":
+				info.merge({icon = "burn", verb = "BURN", sides = true}, true)
+			"engineer":
+				info.merge({icon = "switch", verb = "SWITCH"}, true)
+			"comms":
+				var in_view: bool = _state.get("dsn", {}).get("site", "") != ""
+				info.merge({icon = "downlink", verb = "DOWNLINK" if in_view else "NO DSN", hold = true, enabled = in_view}, true)
+			"scientist":
+				info.merge({icon = "observe", verb = "NO TARGET", enabled = false}, true)
+			_:
+				info.merge({verb = label_text, enabled = false}, true)
+	return info
+
+
+# --- drawing (UI kit) ------------------------------------------------------------------
 
 func _draw() -> void:
 	var c := color()
+	var ticket_id := int(_ticket.get("id", -1))
+	if ticket_id != _shown_ticket:
+		_shown_ticket = ticket_id
+		if ticket_id != -1:
+			_juice.kick("bubble", 0.3)
 	if has_alert():
 		_draw_bubble()
 	if _docked and not _docked.get("remote"):
@@ -265,18 +303,18 @@ func _draw() -> void:
 			draw_arc(Vector2(0, -2), 9, -PI / 2, -PI / 2 + TAU * _progress, 24, c, 2.0)
 	elif _docked:
 		if not _visitors.is_empty():  # someone else is on it (co-op)
-			_text_centered(Vector2(0, -radius - 2), "IN USE", Color(c, 0.7))
+			_tag(Vector2(0, -radius - 4), "", "IN USE", Color(c, 0.6))
 	elif not _visitors.is_empty():
 		var pulse := 0.6 + 0.4 * sin(_time * 6.0)
 		draw_arc(Vector2.ZERO, radius, 0, TAU, 24, Color(c, pulse), 1.0)
-		_text_centered(Vector2(0, -radius - 2), label_text, c)
+		_tag(Vector2(0, -radius - 4), UiKit.ROLE_ICONS.get(role, ""), label_text, c)
 	elif _offline:
 		draw_arc(Vector2.ZERO, radius, 0, TAU, 24, Color(ALERT_COLOR, 0.6), 1.0)
 
 
-## "!" bubble above the station with a countdown ring (or a blinking OFFLINE wrench).
+## Alert bubble above the station: a role-coloured block with "!" (or a red wrench when the
+## station is OFFLINE) and a 4-segment countdown under it. Pops in when a new ticket arrives.
 func _draw_bubble() -> void:
-	var center := Vector2(0, -radius - 10)
 	var ticket := _ticket
 	if ticket.is_empty():  # alert from the dust stream: show its countdown instead
 		var total: float = _dust.get("time_left", 0.0)
@@ -284,17 +322,25 @@ func _draw_bubble() -> void:
 	var urgent: bool = _offline or (ticket.time_left >= 0.0 and ticket.time_left < 4.0)
 	var blink: bool = not urgent or fmod(_time, 0.4) < 0.25
 	var fill := ALERT_COLOR if _offline else color()
-	draw_circle(center, 6, Color(0, 0, 0, 0.75))
-	if blink:
-		draw_circle(center, 4, fill)
-	if not _offline and ticket.time_left >= 0.0:
+	var s := _juice.pop("bubble", 0.6)
+	var center := Vector2(0, -radius - 11 + _juice.bounce("bubble", 3.0))
+	draw_set_transform(center, 0.0, Vector2(s, s))
+	var box := Rect2(-6, -6, 12, 12)
+	UiKit.panel(self, box, fill if blink else fill.darkened(0.45))
+	if _offline:
+		UiKit.icon(self, "wrench", Vector2(-4, -4), 1, Color.WHITE)
+	else:
+		draw_rect(Rect2(-1, -4, 2, 5), UiKit.INK)   # "!"
+		draw_rect(Rect2(-1, 2, 2, 2), UiKit.INK)
+	draw_set_transform(Vector2.ZERO)
+	if not _offline and ticket.time_left >= 0.0 and ticket.duration > 0.0:
 		var left := clampf(ticket.time_left / ticket.duration, 0.0, 1.0)
-		draw_arc(center, 6, -PI / 2, -PI / 2 + TAU * left, 20, Color.WHITE, 1.0)
-	_text_centered(center + Vector2(0, 3), "X" if _offline else "!", Color.BLACK)
+		var bar_col := Color.WHITE if urgent and fmod(_time, 0.3) < 0.15 else fill
+		UiKit.seg_bar(self, Rect2(center.x - 8, center.y + 7, 17, 5), left, bar_col, 4)
 
 
-## Small panel above the docked crew: what USE and ←/→ do right now.
-func _draw_panel() -> void:
+## Lines for the docked panel: what USE and LEFT/RIGHT do right now.
+func _panel_lines() -> Array[String]:
 	var lines: Array[String] = []
 	if _ticket.get("kind", "") == "shields":
 		lines.append("RADIATION STORM IN %ds" % ceili(_ticket.time_left))
@@ -336,30 +382,66 @@ func _draw_panel() -> void:
 				lines.append("NO TARGET")
 			_:
 				lines.append(label_text)
+	return lines
 
-	var font := UiFont.font()
+
+## Panel above the docked crew (below the station if a HUD block is in the way).
+## "SPACE" in a hint line is drawn as a key cap.
+func _draw_panel() -> void:
+	var lines := _panel_lines()
+	var key := Controls.key_name("p1", "interact")
+	var line_h := maxf(9.0, UiKit.line_h(FONT_SIZE) + 1)
 	var width := 0.0
 	for line in lines:
-		width = maxf(width, font.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x)
-	var line_h := 8.0
-	var box := Rect2(-width / 2.0 - 3, -radius - 6 - line_h * lines.size() - 2,
-			width + 6, line_h * lines.size() + 3)
+		width = maxf(width, _line_width(line, key))
+	var box := Rect2(-roundf(width / 2.0) - 4, 0, roundf(width) + 8, line_h * lines.size() + 5)
+	box.position.y = -radius - 6 - box.size.y
 	if has_alert():
-		box.position.y -= 14  # keep the bubble visible
-	# Keep the panel on screen near the hull edges.
+		box.position.y -= 20  # keep the bubble visible
+	# Keep the panel on screen near the hull edges, and out from under the HUD blocks.
 	var screen_x := global_position.x + box.position.x
 	var shift := maxf(2.0 - screen_x, 0.0) - maxf(screen_x + box.size.x - 478.0, 0.0)
 	box.position.x += shift
-	draw_rect(box, Color(0, 0, 0, 0.8))
-	draw_rect(box, color(), false, 1.0)
+	if UiKit.hits_hud(Rect2(global_position + box.position, box.size)):
+		box.position.y = 6
+	UiKit.panel(self, box, UiKit.PANEL, color())
 	for i in lines.size():
-		var hint := lines[i].begins_with("HOLD") or lines[i].begins_with("SPACE")
-		var col := Color("9aa4b8") if hint else Color.WHITE
-		_text_centered(Vector2(shift, box.position.y + 8 + line_h * i), lines[i], col)
+		_draw_line(Vector2(shift, box.position.y + 3 + line_h * (i + 1) - 2), lines[i], key, line_h)
 
 
-func _text_centered(pos: Vector2, text: String, col: Color) -> void:
-	var font := UiFont.font()
-	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE).x
-	draw_string(font, Vector2(roundf(pos.x - w / 2.0), roundf(pos.y)), text,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, FONT_SIZE, col)
+func _line_width(line: String, key: String) -> float:
+	if line.begins_with("HOLD SPACE: ") or line.begins_with("SPACE: "):
+		var rest := line.trim_prefix("HOLD SPACE: ").trim_prefix("SPACE: ")
+		var hold := UiKit.text_w("HOLD ", FONT_SIZE) if line.begins_with("HOLD") else 0.0
+		return hold + UiKit.keycap_size(key, 6).x + 3 + UiKit.text_w(rest, FONT_SIZE)
+	return UiKit.text_w(line, FONT_SIZE)
+
+
+## One centred panel line at baseline `pos.y`; hint lines get a key cap.
+func _draw_line(pos: Vector2, line: String, key: String, line_h: float) -> void:
+	var w := _line_width(line, key)
+	var x := roundf(pos.x - w / 2.0)
+	if line.begins_with("HOLD SPACE: ") or line.begins_with("SPACE: "):
+		if line.begins_with("HOLD"):
+			UiKit.text(self, Vector2(x, pos.y), "HOLD", FONT_SIZE, UiKit.DIM, 0)
+			x += UiKit.text_w("HOLD ", FONT_SIZE)
+		var cap := UiKit.keycap_size(key, 6)
+		UiKit.keycap(self, Vector2(x, pos.y - cap.y + 1), key, 6)
+		x += cap.x + 3
+		UiKit.text(self, Vector2(x, pos.y), line.trim_prefix("HOLD SPACE: ").trim_prefix("SPACE: "), FONT_SIZE, UiKit.WARN, 0)
+	else:
+		UiKit.text(self, Vector2(x, pos.y), line, FONT_SIZE, UiKit.TEXT, 0)
+
+
+## Small floating label (icon + text) centred on `bottom_center`.
+func _tag(bottom_center: Vector2, icon_name: String, text: String, col: Color) -> void:
+	var tw := UiKit.text_w(text, 7)
+	var w := tw + 6 + (10 if icon_name != "" else 0)
+	var h := maxf(10.0, UiKit.line_h(7) + 2)
+	var r := Rect2(roundf(bottom_center.x - w / 2.0), bottom_center.y - h, roundf(w), h)
+	UiKit.panel(self, r, UiKit.PANEL_DARK, col)
+	var x := r.position.x + 3
+	if icon_name != "":
+		UiKit.icon(self, icon_name, Vector2(x, r.position.y + roundf((h - 8) / 2.0)), 1, col)
+		x += 10
+	UiKit.text(self, Vector2(x, r.end.y - 2), text, 7, col, 0)

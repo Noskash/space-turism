@@ -90,10 +90,12 @@ static func _new_flight() -> Dictionary:
 
 func _enter_tree() -> void:
 	_saved_window = PixelMode.enter(get_window())
+	UiFont.max_level = 1  # fixed telemetry rows: TEXT SIZE stops at LARGE here
 
 
 func _exit_tree() -> void:
 	PixelMode.exit(get_window(), _saved_window)
+	UiFont.max_level = 2
 	Sfx.set_loop("rocket", false)
 
 
@@ -136,10 +138,10 @@ func _ready() -> void:
 	var layer := CanvasLayer.new()  # UI does not shake
 	add_child(layer)
 	_ui = Node2D.new()
-	_ui.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	UiKit.setup_canvas(_ui)
 	_ui.draw.connect(_draw_ui)
 	layer.add_child(_ui)
-	PauseMenu.attach(self, "ABORT TO MAIN MENU")
+	PauseMenu.attach(self, "ABORT TO MAIN MENU", "W/S THROTTLE · SPACE SEPARATE STAGE · H HELP")
 	_tutorial = Tutorial.attach(self, "launch", [
 		{title = "Fly the rocket", rect = Rect2(410, 50, 56, 192),
 		 body = "W / S push and pull the throttle lever. In co-op the rocket uses the AVERAGE of everyone's levers."},
@@ -774,7 +776,8 @@ func _draw_small_flame(at: Vector2, length: float) -> void:
 func _draw_ui() -> void:
 	var f := flight
 	var ui := _ui
-	# Telemetry, top left.
+	# Telemetry, top left, on a raised block.
+	UiKit.panel(ui, Rect2(4, 5, 152, 96 + (15 if f.damage > 0 else 0)), UiKit.PANEL)
 	var x := 10.0
 	var y := 18.0
 	_text(ui, Vector2(x, y), "ALT   %6.1f KM" % f.alt, Color.WHITE)
@@ -809,26 +812,26 @@ func _draw_ui() -> void:
 		_draw_failure(ui)
 	elif f.q > 1.0 and fmod(_time, 0.4) < 0.28:
 		var t := "MAX-Q: THROTTLE DOWN (S)"
-		_text(ui, Vector2(240 - UiFont.width(t, 11) / 2.0, 70), t, Color("ff5050"), 11)
+		_text(ui, Vector2(240 - UiKit.text_w(t, 11) / 2.0, 70), t, Color("ff5050"), 11)
 
 	# Banner, centre top.
 	if f.phase == "failed":
 		pass
 	elif _banner_time > 0.0 and _banner != "":
 		var big := 16 if _banner.length() <= 3 else 11
-		var w := UiFont.width(_banner, big)
+		var w := UiKit.text_w(_banner, big)
 		var a := clampf(_banner_time * 2.0, 0.0, 1.0)
-		ui.draw_rect(Rect2(240 - w / 2.0 - 6, 30, w + 12, big + 8), Color(0, 0, 0, 0.55 * a))
+		UiKit.panel(ui, Rect2(roundf(240 - w / 2.0 - 8), 28, roundf(w + 16), UiFont.px(big) + 10), Color(UiKit.PANEL, a), Color(UiKit.WARN, a))
 		_text(ui, Vector2(240 - w / 2.0, 30 + big + 1), _banner, Color(1, 1, 1, a), big)
 	elif f.phase == "meco":
 		var left: float = maxf(STAGE_WINDOW - f.coast, 0.0)
 		var urgent: bool = f.coast >= STAGE_WINDOW * 0.75
 		if fmod(_time, 0.3 if urgent else 0.6) < (0.2 if urgent else 0.4):
 			var t := ("SEPARATE NOW!  %.1f" if urgent else "PRESS SPACE: SEPARATE STAGE  %.0f") % left
-			_text(ui, Vector2(240 - UiFont.width(t, 11) / 2.0, 46), t, Color("ff5050") if urgent else Color("ffc640"), 11)
+			_text(ui, Vector2(240 - UiKit.text_w(t, 11) / 2.0, 46), t, Color("ff5050") if urgent else Color("ffc640"), 11)
 	elif f.phase == "pad" and f.throttle * _twr1 <= 1.0:
 		var t := "NOT ENOUGH THRUST - LEVER UP (W)"
-		_text(ui, Vector2(240 - UiFont.width(t, 10) / 2.0, 46), t, Color("ffc640"), 10)
+		_text(ui, Vector2(240 - UiKit.text_w(t, 10) / 2.0, 46), t, Color("ffc640"), 10)
 
 	var info := "%s  ·  SHIP %d KG / ROCKET LIFTS %d KG  ·  SIMPLIFIED PHYSICS" % [
 			str(_launcher.get("name", "")).to_upper(),
@@ -838,18 +841,17 @@ func _draw_ui() -> void:
 
 
 func _draw_failure(ui: Node2D) -> void:
-	var r := Rect2(90, 118, 300, 86)
-	ui.draw_rect(r, Color(0.05, 0.02, 0.03, 0.88))
-	ui.draw_rect(r, Color("ff5050"), false, 1.0)
+	var r := Rect2(86, 112, 308, 96)
+	UiKit.frame(ui, r, UiKit.BAD, Color("1a0c10"))
 	var title := "LAUNCH FAILED"
-	_text(ui, Vector2(240 - UiFont.width(title, 14) / 2.0, r.position.y + 20), title, Color("ff5050"), 14)
+	_text(ui, Vector2(240 - UiKit.text_w(title, 14) / 2.0, r.position.y + 20), title, Color("ff5050"), 14)
 	var reason := str(flight.fail)
-	_text(ui, Vector2(240 - UiFont.width(reason, 9) / 2.0, r.position.y + 36), reason, Color.WHITE, 9)
+	_text(ui, Vector2(240 - UiKit.text_w(reason, 9) / 2.0, r.position.y + 36), reason, Color.WHITE, 9)
 	var hint := str(flight.hint)
-	_text(ui, Vector2(240 - UiFont.width(hint, 7) / 2.0, r.position.y + 50), hint, Color("9aa4b8"), 7)
+	_text(ui, Vector2(240 - UiKit.text_w(hint, 7) / 2.0, r.position.y + 50), hint, Color("9aa4b8"), 7)
 	var keys := "SPACE: NEW ROCKET     D: REDESIGN SHIP"
 	var blink := 1.0 if fmod(_time, 1.0) < 0.7 else 0.6
-	_text(ui, Vector2(240 - UiFont.width(keys, 9) / 2.0, r.position.y + 72), keys, Color(1.0, 0.78, 0.25, blink), 9)
+	_text(ui, Vector2(240 - UiKit.text_w(keys, 9) / 2.0, r.position.y + 72), keys, Color(1.0, 0.78, 0.25, blink), 9)
 
 
 func _draw_lever(ui: Node2D) -> void:
@@ -857,8 +859,7 @@ func _draw_lever(ui: Node2D) -> void:
 	var track_h := 150.0
 	var top := base.y - track_h
 	# Housing.
-	ui.draw_rect(Rect2(base.x - 22, top - 22, 52, track_h + 40), Color(0.05, 0.06, 0.12, 0.75))
-	ui.draw_rect(Rect2(base.x - 22, top - 22, 52, track_h + 40), Color("2c3454"), false, 1.0)
+	UiKit.panel(ui, Rect2(base.x - 24, top - 22, 56, track_h + 64), UiKit.PANEL)
 	_text(ui, Vector2(base.x - 18, top - 11), "THROTTLE", Color.WHITE, 7)
 	# Too much dynamic pressure: the housing flashes red and an arrow says "down".
 	if flight.q > 1.0 and fmod(_time, 0.4) < 0.25:
@@ -883,23 +884,22 @@ func _draw_lever(ui: Node2D) -> void:
 		var c := CrewRoles.color(roles[id])
 		ui.draw_colored_polygon(PackedVector2Array([Vector2(base.x - 12, ly - 3), Vector2(base.x - 7, ly), Vector2(base.x - 12, ly + 3)]), c)
 	var hy := base.y - track_h * _lever
+	ui.draw_rect(Rect2(base.x - 10, hy - 5, 24, 10), UiKit.INK)
 	ui.draw_rect(Rect2(base.x - 9, hy - 4, 22, 8), Color("d8dce8"))
-	ui.draw_rect(Rect2(base.x - 9, hy - 4, 22, 8), Color("7a8094"), false, 1.0)
 	for g in 3:
 		ui.draw_rect(Rect2(base.x - 6 + g * 6, hy - 2, 4, 1), Color("7a8094"))
 	ui.draw_rect(Rect2(base.x - 9, hy - 4, 22, 2), CrewRoles.color(roles.get(_me, "all")))
 	var label := "%d%%" % roundi(flight.throttle * 100.0)
-	_text(ui, Vector2(base.x + 2 - UiFont.width(label, 9) / 2.0, base.y + 14), label, Color.WHITE, 9)
+	_text(ui, Vector2(base.x + 2 - UiKit.text_w(label, 9) / 2.0, base.y + 14), label, Color.WHITE, 9)
 	if roles.size() > 1:
 		_text(ui, Vector2(base.x - 20, base.y + 22), "AVG OF CREW", Color("9aa4b8"), 6)
 	_text(ui, Vector2(base.x - 18, base.y + (32 if roles.size() > 1 else 24)), "W/S: LEVER", Color("9aa4b8"), 6)
 
 
+## Segmented bar (UI kit).
 func _bar(ui: Node2D, r: Rect2, fill: float, color: Color) -> void:
-	ui.draw_rect(r, Color(0, 0, 0, 0.55))
-	ui.draw_rect(Rect2(r.position, Vector2(roundf(r.size.x * clampf(fill, 0.0, 1.0)), r.size.y)), color)
+	UiKit.seg_bar(ui, Rect2(r.position.x, r.position.y - 1, r.size.x, 6), clampf(fill, 0.0, 1.0), color, 16)
 
 
 func _text(ui: Node2D, pos: Vector2, text: String, color: Color, size := 8) -> void:
-	ui.draw_string_outline(_font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, 2, Color(0, 0, 0, color.a * 0.8))
-	ui.draw_string(_font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
+	UiKit.text(ui, pos, text, size, color, 2)

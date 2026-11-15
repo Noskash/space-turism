@@ -82,6 +82,7 @@ func _ready() -> void:
 	layer = 20
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_canvas = Node2D.new()
+	UiKit.setup_canvas(_canvas)
 	_canvas.draw.connect(_draw_canvas)
 	add_child(_canvas)
 	visible = false
@@ -169,71 +170,83 @@ func _button_at(p: Vector2) -> String:
 	return ""
 
 
-# --- drawing ------------------------------------------------------------------------------
+# --- drawing (UI kit) ------------------------------------------------------------------------
 
 func _draw_canvas() -> void:
 	if not is_open():
 		return
+	var c := _canvas
 	var pane: Dictionary = panes[_index]
 	var hole: Rect2 = pane.get("rect", Rect2())
 	_dim(hole)
 	if hole.has_area():
-		var blink := 0.55 + 0.45 * sin(_time * 6.0)
-		_canvas.draw_rect(hole.grow(1), Color(ACCENT, blink), false, 1.0)
+		# Chunky blinking frame around the highlighted part of the screen.
+		var col := UiKit.WARN if fmod(_time, 0.5) < 0.32 else Color(UiKit.WARN, 0.35)
+		var h := hole.grow(1)
+		c.draw_rect(Rect2(h.position.x - 1, h.position.y - 1, h.size.x + 2, 2), col)
+		c.draw_rect(Rect2(h.position.x - 1, h.end.y - 1, h.size.x + 2, 2), col)
+		c.draw_rect(Rect2(h.position.x - 1, h.position.y - 1, 2, h.size.y + 2), col)
+		c.draw_rect(Rect2(h.end.x - 1, h.position.y - 1, 2, h.size.y + 2), col)
 
-	var font := UiFont.font()
-	var lines := _wrap(str(pane.get("body", "")), BOX_W - PAD * 2)
-	var h := 26.0 + lines.size() * 10.0 + 22.0
-	var box := Rect2(Vector2((480.0 - BOX_W) / 2.0, 0), Vector2(BOX_W, h))
+	var box_w := minf(BOX_W * UiFont.SCALES[UiFont.text_size()], 440.0)
+	var lines := UiKit.wrap(str(pane.get("body", "")), BODY, box_w - PAD * 2)
+	var title_h := UiKit.line_h(9) + 6
+	var line_h := UiKit.line_h(BODY)
+	var btn_h := UiKit.keycap_size("X", 7).y + 6
+	var h := title_h + 6 + lines.size() * line_h + 6 + btn_h + 6
+	var box := Rect2(Vector2(roundf((480.0 - box_w) / 2.0), 0), Vector2(roundf(box_w), roundf(h)))
 	# Keep the box away from the highlighted area: below it if it is high up, above otherwise.
 	if hole.has_area() and hole.get_center().y < 135.0:
-		box.position.y = minf(hole.end.y + 8.0, 262.0 - h)
+		box.position.y = minf(hole.end.y + 8.0, 266.0 - h)
 	elif hole.has_area():
-		box.position.y = maxf(hole.position.y - h - 8.0, 8.0)
+		box.position.y = maxf(hole.position.y - h - 8.0, 4.0)
 	else:
-		box.position.y = (270.0 - h) / 2.0
+		box.position.y = roundf((270.0 - h) / 2.0)
 	if hole.has_area() and box.intersects(hole):
-		box.position.y = 262.0 - h if hole.get_center().y < 135.0 else 8.0
-	_canvas.draw_rect(box.grow(2), Color(0, 0, 0, 0.6))
-	_canvas.draw_rect(box, Color("10142a"))
-	_canvas.draw_rect(box, ACCENT, false, 1.0)
-	_canvas.draw_rect(Rect2(box.position, Vector2(box.size.x, 14)), Color("1d2a4a"))
-
+		box.position.y = 266.0 - h if hole.get_center().y < 135.0 else 4.0
+	box.position.y = roundf(box.position.y)
+	UiKit.frame(c, box, ACCENT)
+	# Title bar.
 	var x := box.position.x + PAD
-	var y := box.position.y + 10.0
-	_canvas.draw_string(font, Vector2(x, y), str(pane.get("title", "")).to_upper(),
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 9, ACCENT)
-	var page := "%d/%d" % [_index + 1, panes.size()]
-	_canvas.draw_string(font, Vector2(box.end.x - PAD - UiFont.width(page, 7), y), page,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color("6b7390"))
-	y += 15.0
+	var bar := Rect2(box.position + Vector2(3, 3), Vector2(box.size.x - 6, title_h))
+	c.draw_rect(bar, UiKit.PANEL)
+	c.draw_rect(Rect2(bar.position.x, bar.end.y, bar.size.x, 1), UiKit.INK)
+	UiKit.text(c, Vector2(x, bar.end.y - 4), str(pane.get("title", "")).to_upper(), 9, ACCENT)
+	UiKit.text_r(c, box.end.x - PAD, bar.end.y - 4, "%d/%d" % [_index + 1, panes.size()], 7, UiKit.DIM, 0)
+	var y := bar.end.y + 5
 	for line in lines:
-		_canvas.draw_string(font, Vector2(x, y), line, HORIZONTAL_ALIGNMENT_LEFT, -1, BODY, Color("e8ecf8"))
-		y += 10.0
+		y += line_h
+		UiKit.text(c, Vector2(x, y - 2), line, BODY, UiKit.TEXT, 0)
 
-	# Buttons along the bottom edge.
-	var by := box.end.y - 16.0
-	var skip_text := "SKIP TUTORIAL [X]"
-	var next_text := ("GOT IT" if _index == panes.size() - 1 else "NEXT >") + " [SPACE]"
+	# Buttons along the bottom edge: [X] SKIP TUTORIAL ........ NEXT > [SPACE]
+	var by := box.end.y - btn_h - 5
+	var last := _index == panes.size() - 1
 	_buttons = {
-		skip = Rect2(x - 2, by, UiFont.width(skip_text, 7) + 8, 12),
-		next = Rect2(box.end.x - PAD - UiFont.width(next_text, 8) - 6, by, UiFont.width(next_text, 8) + 8, 12),
+		skip = _button(Vector2(x - 2, by), "X", "SKIP TUTORIAL", 7, UiKit.DIM, false, btn_h),
 	}
-	_button("skip", skip_text, 7, Color("9aa4b8"))
-	_button("next", next_text, 8, Color("ffc640"))
+	var next_label := "GOT IT" if last else "NEXT >"
+	var next_w := _button_width("SPACE", next_label, 8)
+	_buttons.next = _button(Vector2(box.end.x - PAD - next_w + 2, by), "SPACE", next_label, 8, UiKit.WARN, true, btn_h)
 
 
-func _button(id: String, text: String, size: int, color: Color) -> void:
-	var r: Rect2 = _buttons[id]
-	var hot := _hover == id or (id == "next" and fmod(_time, 1.2) < 0.8)
-	_canvas.draw_rect(r, Color(color, 0.18 if hot else 0.08))
-	_canvas.draw_rect(r, Color(color, 0.9 if hot else 0.5), false, 1.0)
-	_canvas.draw_string(UiFont.font(), r.position + Vector2(4, 9), text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
+func _button_width(key: String, label: String, size: int) -> float:
+	return 4 + UiKit.keycap_size(key, 7).x + 4 + UiKit.text_w(label, size) + 5
+
+
+## Button: key cap + label in a raised block; lights up on hover (the primary one pulses).
+func _button(pos: Vector2, key: String, label: String, size: int, color: Color, primary: bool, h: float) -> Rect2:
+	var r := Rect2(pos, Vector2(roundf(_button_width(key, label, size)), h))
+	var id := "next" if primary else "skip"
+	var hot := _hover == id or (primary and fmod(_time, 1.2) < 0.8)
+	UiKit.panel(_canvas, r, UiKit.PANEL if hot else UiKit.PANEL_DARK, color if hot else UiKit.FAINT)
+	var cap := UiKit.keycap(_canvas, Vector2(r.position.x + 4, r.position.y + 3), key, 7)
+	UiKit.text(_canvas, Vector2(cap.end.x + 4, r.end.y - 4), label, size, color, 0)
+	return r
 
 
 ## Darken everything except `hole`.
 func _dim(hole: Rect2) -> void:
-	var c := Color(0, 0, 0, 0.55)
+	var c := Color(0.01, 0.02, 0.06, 0.6)
 	if not hole.has_area():
 		_canvas.draw_rect(Rect2(0, 0, 480, 270), c)
 		return
@@ -242,18 +255,3 @@ func _dim(hole: Rect2) -> void:
 	_canvas.draw_rect(Rect2(0, h.end.y, 480, 270 - h.end.y), c)
 	_canvas.draw_rect(Rect2(0, h.position.y, h.position.x, h.size.y), c)
 	_canvas.draw_rect(Rect2(h.end.x, h.position.y, 480 - h.end.x, h.size.y), c)
-
-
-func _wrap(text: String, max_w: float) -> PackedStringArray:
-	var out := PackedStringArray()
-	for paragraph in text.split("\n"):
-		var line := ""
-		for word in paragraph.split(" "):
-			var test := word if line == "" else line + " " + word
-			if UiFont.width(test, BODY) > max_w and line != "":
-				out.append(line)
-				line = word
-			else:
-				line = test
-		out.append(line)
-	return out

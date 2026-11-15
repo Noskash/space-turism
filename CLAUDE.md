@@ -109,6 +109,8 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
   Each hit: random station offline or -8% fuel. Reaction wheels: faster turning, turning costs no fuel.
   Star tracker: earlier warning + red edge chevrons before rocks fly in. While flying, no downlink.
 - Minigames are CanvasLayers (layer 15) that call `Tutorial.hold()` so crew/station input is off meanwhile.
+  They share one look (`MinigameFrame`, see UI kit). Q closes shields / safe mode on that machine only (the
+  ticket stays, anyone can reopen it); the dodge game has no close (it would have to report a result).
 - State: `cme {phase, time_left, duration, shielding, shields, safe}`, `blackout`,
   `dust {phase, time_left, hits, wheels, tracker}`.
 - Part effects (data/design_stats.json): rad_shielding `shields`, particle_monitor `cme_warning`, rtg
@@ -125,8 +127,9 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
   MUSIC level, saved). Dies in a blackout, static during a radiation wave.
 
 ## ESC menu (`scripts/ui/pause_menu.gd`, class `PauseMenu`)
-- `PauseMenu.attach(scene, leave_text)` on designer / launch / cruise: RESUME, HOW TO PLAY, SOUND (Master bus,
-  saved in `user://settings.cfg`), FULLSCREEN, LEAVE (press twice), QUIT (press twice).
+- `PauseMenu.attach(scene, leave_text, controls_text)` on designer / launch / cruise: RESUME, HOW TO PLAY, SOUND
+  (Master bus, saved in `user://settings.cfg`), MUSIC, TEXT SIZE (NORMAL / LARGE / HUGE, `UiFont`), FULLSCREEN,
+  LEAVE (press twice), QUIT (press twice). The footer lists the screen's controls (`controls_text`).
 - Offline it pauses the tree; in co-op the mission keeps running and only local input is blocked
   (`Tutorial.hold()` shares the tutorial's input gate). Tutorial + PauseMenu + Sfx run with PROCESS_MODE_ALWAYS.
 
@@ -151,15 +154,44 @@ Flow: Designer → **Launch** → cruise. ~30-45 s, SIMPLIFIED physics (labelled
 - **Event walkthroughs** (`scripts/game/event_guide.gd`, `EventGuide`): the first time each event happens
   (radiation storm shielded / safe-mode, comet debris, blackout, the 3 faults, science window, repair, low
   battery, full storage), a dialog explains it (real basis, who, how, which parts help; sim paused), then a live
-  "HOW TO BEAT IT" checklist under the banner + arrow over the station ticks off steps from sim state, then a
-  one-line outcome. Seen state `seen/event_<id>` in tutorial.cfg; off with SKIP TUTORIAL. In co-op only the
-  host's open dialog pauses the sim.
+  "HOW TO BEAT IT" checklist under the HUD's alert strip + arrow over the station ticks off steps from sim state,
+  then an outcome stamp. Seen state `seen/event_<id>` in tutorial.cfg; off with SKIP TUTORIAL. In co-op only the
+  host's open dialog pauses the sim. Pane highlights use `UiKit.hud_rect(...)`, not fixed numbers.
 
 ## Presentation
 - Gameplay scenes use `PixelMode` (480x270, integer scale, **canvas_items** stretch) so UI text renders at
   full resolution; pixel art keeps Nearest filtering. UI font: Share Tech Mono (OFL, `ui/fonts/`) via `UiFont`.
 - Cruise: stars stream past the hull (3 parallax layers), the ship bobs gently, engines flicker, reactor glows,
   engine drone loop.
+
+## UI kit (built 2026-11-15; "Soul Knight x Among Us" feel, our own art)
+- `UiKit` (`scripts/ui/ui_kit.gd`): palette (INK outline, PANEL, TEXT/DIM/FAINT, GOOD/WARN/BAD, `ROLE_COLORS`,
+  `RESOURCE_COLORS` = owner role's colour) + immediate-mode helpers called from `_draw()`: `panel` (1 px ink
+  outline, cut corners, light top / dark bottom bevel, optional accent top edge), `frame` (big 2 px frame),
+  `seg_bar` (segments, red "lost" / light "incoming" ghost), `chip`, `keycap`, `icon`, `text/text_c/text_r`
+  (ink outline), `fit`, `wrap`, `dither` (50% checker), `stamp` ("DONE"). Rules: whole pixels, no gradients or
+  blur (dither or hard bands instead), every block has an ink outline. Call `UiKit.setup_canvas(node)`.
+- `UiJuice` (`scripts/ui/ui_juice.gd`): kick(key) -> pop / flash / shake / bounce values. Kick only from sim
+  state diffs so co-op peers see the same juice.
+- Text: always through `UiKit.text*` or `UiFont.px(size)`; TEXT SIZE scales 1 / 1.25 / 1.5. Dense screens cap it
+  with `UiFont.max_level` (designer + launch stop at LARGE; set in _enter_tree, reset in _exit_tree).
+- Icons: `sprites/ui_icons/` (8x8 + 16x16 + @4x), drawn by `draw_icons.gd` (GDScript, no Python needed):
+  `Godot_console --headless --path . -s res://sprites/ui_icons/draw_icons.gd`, then open the editor to import.
+  Designs are fill maps; the script adds the ink outline and bottom/right shade. White icons are tinted in game.
+- Cruise HUD = corner blocks (`hud.gd`): top-left resources (`ResourceBar`), top-centre Earth->Mars progress +
+  DSN / sent / lost, alert strip and toasts under it, top-right task list (`TaskList`, TAB folds; replaces the
+  ticket strip), bottom-right action button (`ActionButton`, verb from `Station.action_info()`, key cap from
+  `Controls.key_name`), bottom-left you (name + role colour), radio, controls hint for the first 30 s.
+  Alerts (`AlertBanner`): slab slides across (icon + 2-4 words), then folds into the strip; `show_slab()` for
+  new alerts (MOI, breach...). Block rects are published in `UiKit.hud` every frame; station panels move below
+  the station if they would sit under one (`UiKit.hits_hud`), the event checklist stacks under the strip.
+- Crew: role-coloured name tags in co-op (`CrewMember.display_name`, drawn on a z 45 child above the lighting).
+- `MinigameFrame` (`scripts/ui/minigame_frame.gd`): dim backdrop, big frame in the station colour, title bar
+  with icon, Q CLOSE key cap, deadline bar, footer hint + note, stamp. Full-screen games use `draw_bar`.
+- New class_name files need one editor scan (or `--headless --import`) before `-s` scripts can see them.
+- Not yet on the kit: the Control-based menus (main menu, level select, lobby, join, characters; `space_theme.tres`).
+  Not built, so nothing to restyle: report, codex, briefing, goal line, radar minigame, HULL / O2 bars (would need
+  new sim state keys: contract change, agree with Person A first).
 
 ## Cruise gameplay (decided 2026-11-14)
 Overcooked loop: background pressure (battery drain, data filling, drift, DSN passes) + **tickets**

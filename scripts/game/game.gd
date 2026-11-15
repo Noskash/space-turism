@@ -39,6 +39,7 @@ func _ready() -> void:
 	add_child(_net)
 	_net.crew_received.connect(_on_crew_received)
 	_spawn_crew()
+	_hud.local = _local
 	Vfx.new().setup(self, _map, _crew)
 	ShipLighting.new().setup(self, _map, _crew)
 	add_child(Radio.new().setup(_hud.radio_label))
@@ -53,15 +54,19 @@ func _ready() -> void:
 	if _net.is_authority():
 		_mission.crew_size = maxi(Network.players.size(), 1) if _net.active else 1
 		_mission.start(DesignRules.chosen)  # clients get the host's state through NetSync
-	PauseMenu.attach(self, "ABANDON MISSION")
+	PauseMenu.attach(self, "ABANDON MISSION", "WASD MOVE · SHIFT RUN · SPACE USE · TAB TASKS · K SKIN · H HELP")
 	_guide = EventGuide.new()
 	_guide.name = "EventGuide"
 	_guide.map = _map
 	_guide.local = _local
 	add_child(_guide)
 	_tutorial = Tutorial.attach(self, "cruise", [
-		{title = "Fly the mission", rect = Rect2(326, 4, 128, 18),
-		 body = "Problems pop up as tickets, top right, each with a countdown. Run to that station before the timer runs out. SHIFT = run."},
+		{title = "Fly the mission", rect = UiKit.hud_rect("tasks").grow(1),
+		 body = "Problems pop up as tasks, top right, each with a countdown in its role's colour. Run to that station before the timer runs out. SHIFT = run, TAB folds the list."},
+		{title = "Ship and mission", rect = UiKit.hud_rect("resources").merge(UiKit.hud_rect("progress")).grow(1),
+		 body = "Top left: POWER, FUEL and DATA storage. Top centre: the trip from Earth to Mars, the Deep Space Network pass, science sent home and science lost."},
+		{title = "Action button", rect = UiKit.hud_rect("action").grow(1),
+		 body = "Bottom right shows what SPACE does right now: DOCK at a station, REPAIR, FIX, DOWNLINK... Grey = nothing to do here."},
 		{title = "Stations", rect = Rect2(336, 34, 108, 168),
 		 body = "Walk into a station's ring and press SPACE to dock. A/D pick an option, HOLD SPACE to work, W/S leave. BRIDGE (NAV): course-correction burns cost fuel and power."},
 		{title = "Engine room", rect = Rect2(30, 138, 118, 112),
@@ -70,8 +75,8 @@ func _ready() -> void:
 		 body = "COM: HOLD SPACE to send data home - only while a Deep Space Network station is in view and the transmitter is on. Full storage = lost science."},
 		{title = "Science lab", rect = Rect2(160, 34, 164, 80),
 		 body = "SCI: when a science window opens, HOLD SPACE to observe. Instruments must be on - they eat power and fill storage."},
-		{title = "Events", rect = Rect2(40, 29, 400, 16),
-		 body = "Radiation storms, comet debris, faults, science windows... Big ones flash a banner here. The first time each one happens, a walkthrough shows you how to beat it."},
+		{title = "Events", rect = Rect2(UiKit.hud_rect("progress").position.x, UiKit.hud_rect("progress").end.y + 2, UiKit.hud_rect("progress").size.x, 14),
+		 body = "Radiation storms, comet debris, faults, science windows... Big ones slide a banner across the screen, then stay here with a countdown. The first time each one happens, a walkthrough shows you how to beat it."},
 		{title = "Missed tickets",
 		 body = "A missed ticket knocks its station OFFLINE until someone docks and holds a repair. Score = science that reached Earth. H shows this again."},
 	])
@@ -101,7 +106,7 @@ func _spawn_crew() -> void:
 			_local = member
 	_net.local_crew = _local
 	if _local:
-		_hud.show_role(CrewRoles.tag(_local.role))
+		_hud.show_role(CrewRoles.tag(_local.role), str(Network.players.get(Network.my_id(), "")))
 
 
 func _add_crew(node_name: String, role: String, index: int, is_remote: bool) -> CrewMember:
@@ -110,6 +115,8 @@ func _add_crew(node_name: String, role: String, index: int, is_remote: bool) -> 
 	member.scheme = "p1"
 	member.role = role
 	member.remote = is_remote
+	if _net.active:  # name tag in co-op (role-coloured)
+		member.display_name = str(Network.players.get(node_name.trim_prefix("Crew_").to_int(), ""))
 	member.skin = PLAYER_SKINS[index % 2]
 	member.ship_map = _map
 	member.position = _map.spawn_point(index)

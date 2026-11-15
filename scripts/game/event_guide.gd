@@ -25,8 +25,6 @@ const WHO := {
 	"navigator": "NAVIGATOR", "engineer": "ENGINEER", "comms": "COMMS",
 	"scientist": "SCIENTIST", "team": "ANYONE",
 }
-const BANNER := Rect2(40, 29, 400, 16)
-const TICKETS := Rect2(326, 4, 128, 18)
 ## Space weather first: these interrupt a calmer walkthrough that is still running.
 const URGENT := ["storm_shields", "storm_safe", "debris", "blackout"]
 const ORDER := ["storm_shields", "storm_safe", "debris", "blackout", "solar_storm", "thruster_leak",
@@ -53,6 +51,7 @@ var _result_left := 0.0
 func _ready() -> void:
 	layer = 12                 # over the HUD, under minigames (15) and dialogs (20)
 	_canvas = Node2D.new()
+	UiKit.setup_canvas(_canvas)
 	_canvas.draw.connect(_draw_guide)
 	add_child(_canvas)
 	Events.state_changed.connect(_on_state)
@@ -195,7 +194,7 @@ func _build(id: String) -> Dictionary:
 			return {
 				title = "RADIATION STORM",
 				panes = [
-					{title = "Radiation storm!", rect = BANNER,
+					{title = "Radiation storm!", rect = _banner_rect(),
 					 body = "The Sun just threw out a burst of fast particles (a solar particle event). The wave hits in %d s. Unprotected, it fries electronics: blackout and broken stations." % ceili(cme.get("time_left", 0))},
 					{title = "Raise the shield", rect = ROOMS.team,
 					 body = "Your ship has RADIATION SHIELDING. Anyone: run to the Mission Hub table and press SPACE. Then press SPACE while the needle is in the GREEN zone, %d times. Each charge makes it faster." % charges},
@@ -217,7 +216,7 @@ func _build(id: String) -> Dictionary:
 			return {
 				title = "RADIATION STORM",
 				panes = [
-					{title = "Radiation storm!", rect = BANNER,
+					{title = "Radiation storm!", rect = _banner_rect(),
 					 body = "The Sun just threw out a burst of fast particles (a solar particle event). The wave hits in %d s. Unprotected, it fries electronics: blackout and broken stations." % ceili(cme.get("time_left", 0))},
 					{title = "Safe mode", rect = ROOMS.engineer,
 					 body = "This ship has NO radiation shielding, so the only defence is to power down. ENGINEER: dock at the Engine Room console and press SPACE. Then cut the BLINKING breaker each time (A/D move, SPACE flip) - the order changes every storm."},
@@ -241,7 +240,7 @@ func _build(id: String) -> Dictionary:
 			return {
 				title = "COMET DEBRIS",
 				panes = [
-					{title = "Comet debris!", rect = BANNER,
+					{title = "Comet debris!", rect = _banner_rect(),
 					 body = "The ship is crossing the trail a comet left behind along its orbit. Real trails are mostly fine dust - here it comes in chunks (SIMPLIFIED). It arrives in %d s." % ceili(s.get("dust", {}).get("time_left", 0))},
 					{title = "Get to the Bridge", rect = ROOMS.navigator,
 					 body = "NAVIGATOR: dock at the Bridge console and STAY docked. When the debris arrives you fly the ship yourself, full screen. Nobody at the Bridge = the ship takes 3 hits."},
@@ -267,7 +266,7 @@ func _build(id: String) -> Dictionary:
 			return {
 				title = "BLACKOUT",
 				panes = [
-					{title = "Blackout", rect = BANNER,
+					{title = "Blackout", rect = _banner_rect(),
 					 body = "The radiation tripped the solar power bus: everything is off and the battery is draining. Only an RTG (nuclear power) keeps making power through a blackout."},
 					{title = "Recover",
 					 body = "Wait for the bus to come back. Then the ENGINEER switches loads back on (A/D pick, SPACE switch), and broken stations get repaired: dock and HOLD SPACE."},
@@ -305,7 +304,7 @@ func _build(id: String) -> Dictionary:
 			return {
 				title = "LOW BATTERY",
 				panes = [
-					{title = "Battery low", rect = Rect2(124, 6, 80, 12),
+					{title = "Battery low", rect = UiKit.hud_rect("resources").grow(1),
 					 body = "The loads use more power than the panels make, and the battery is almost empty. At zero everything trips off (brownout). Sunlight also gets weaker the farther you fly from the Sun."},
 					{title = "Save power", rect = ROOMS.engineer,
 					 body = "ENGINEER: at the Engine Room, A/D pick a load and SPACE to switch it OFF (the heater and instruments are hungry). In design: bigger solar, RTG or battery - each costs mass."},
@@ -324,7 +323,7 @@ func _build(id: String) -> Dictionary:
 			return {
 				title = "STORAGE FULL",
 				panes = [
-					{title = "Storage almost full", rect = Rect2(30, 6, 290, 12),
+					{title = "Storage almost full", rect = UiKit.hud_rect("resources").grow(1),
 					 body = "The recorder is almost full. New science that doesn't fit is LOST, and only science that reaches Earth scores."},
 					{title = "Send it home", rect = ROOMS.comms,
 					 body = "COMMS: dock at Comms and HOLD SPACE while a Deep Space Network station is in view (transmitter on). Recorders store more; a high-gain dish sends faster."},
@@ -344,28 +343,28 @@ func _build(id: String) -> Dictionary:
 			}
 		"science_window":
 			return _fault_guide("science_window", "scientist", "SCIENCE WINDOW", [
-				{title = "Science window", rect = TICKETS,
+				{title = "Science window", rect = UiKit.hud_rect("tasks").grow(1),
 				 body = "Something worth observing is happening (here: a dust storm on Mars). The window closes when the ticket's timer runs out."},
 				{title = "Observe", rect = ROOMS.scientist,
 				 body = "SCIENTIST: dock at the Science Lab and HOLD SPACE. The instruments must be ON (the Engineer switches them). It fills storage, so Comms must downlink it later."},
 			], "Observation captured", "WINDOW MISSED - the science is lost")
 		"solar_storm":
 			return _fault_guide("solar_storm", "engineer", "STORM FAULT", [
-				{title = "Solar storm fault", rect = TICKETS,
+				{title = "Solar storm fault", rect = UiKit.hud_rect("tasks").grow(1),
 				 body = "Charged particles flipped bits in the power electronics. Fix it before the ticket's timer runs out, or the Engine Room goes OFFLINE."},
 				{title = "Reset it", rect = ROOMS.engineer,
 				 body = "ENGINEER: dock at the Engine Room and HOLD SPACE until the ring fills. A rad-hard computer makes these faults much rarer."},
 			], "FAULT CLEARED", "MISSED - Engine Room OFFLINE, repair it")
 		"thruster_leak":
 			return _fault_guide("thruster_leak", "navigator", "THRUSTER LEAK", [
-				{title = "Thruster leak", rect = TICKETS,
+				{title = "Thruster leak", rect = UiKit.hud_rect("tasks").grow(1),
 				 body = "A thruster valve is stuck and leaking propellant. Fix it before the ticket's timer runs out, or the Bridge goes OFFLINE."},
 				{title = "Close the valve", rect = ROOMS.navigator,
 				 body = "NAVIGATOR: dock at the Bridge and HOLD SPACE until the ring fills. Reaction wheels mean the thrusters fire less, so leaks are rarer."},
 			], "LEAK FIXED", "MISSED - Bridge OFFLINE, repair it")
 		"antenna_glitch":
 			return _fault_guide("antenna_glitch", "comms", "ANTENNA GLITCH", [
-				{title = "Antenna glitch", rect = TICKETS,
+				{title = "Antenna glitch", rect = UiKit.hud_rect("tasks").grow(1),
 				 body = "The antenna lost its lock on Earth. Fix it before the ticket's timer runs out, or Comms goes OFFLINE and nothing gets sent home."},
 				{title = "Re-point it", rect = ROOMS.comms,
 				 body = "COMMS: dock at the Comms console and HOLD SPACE until the ring fills."},
@@ -431,29 +430,46 @@ func _data_ok() -> bool:
 	return float(_state.get("data", 100.0)) < 60.0
 
 
-# --- drawing ---------------------------------------------------------------------------------
+# --- drawing (UI kit) ------------------------------------------------------------------------
+
+## Where the alert strip sits (under the HUD's mission progress block).
+func _banner_rect() -> Rect2:
+	var p := UiKit.hud_rect("progress", Rect2(140, 2, 200, 26))
+	return UiKit.hud_rect("alert", Rect2(p.position.x, p.end.y + 2, p.size.x, 14)).grow(1)
+
+
+## Top of the free space under the HUD's top-centre blocks.
+func _below_hud() -> float:
+	var y := UiKit.hud_rect("progress", Rect2(0, 0, 0, 28)).end.y
+	if UiKit.hud.has("alert"):
+		y = UiKit.hud_rect("alert").end.y
+	return y + 2
+
 
 func _draw_guide() -> void:
 	var c := _canvas
-	var font := UiFont.font()
+	var top := _below_hud()
+	UiKit.overlays.erase("guide")
 	if not _guide.is_empty() and not (_dialog and _dialog.is_open()):
 		var steps: Array = _guide.steps
 		var i := mini(_reached, steps.size() - 1)
 		var step: Dictionary = steps[i]
 		var text: String = (step.text as Callable).call() if step.text is Callable else str(step.text)
 		var head := "HOW TO BEAT IT: %s" % _guide.title
-		var w := maxf(UiFont.width(text.to_upper(), 9), UiFont.width(head, 7)) + 40.0
-		var box := Rect2(240.0 - w / 2.0, 46, w, 25)
-		c.draw_rect(box, Color(0.02, 0.03, 0.08, 0.82))
-		c.draw_rect(box, Color(0.31, 0.85, 1.0, 0.8), false, 1.0)
-		c.draw_string(font, box.position + Vector2(6, 9), head, HORIZONTAL_ALIGNMENT_LEFT, -1, 7, Color("4fd8ff"))
-		# Step dots: done = green, current = blinking white.
+		var line := "%d. %s" % [i + 1, text.to_upper()]
+		var dots_w := steps.size() * 7.0
+		var w := maxf(UiKit.text_w(line, 8), UiKit.text_w(head, 7) + dots_w + 8) + 14.0
+		var h := 6 + UiKit.line_h(7) + UiKit.line_h(8) + 2
+		var box := Rect2(roundf(240.0 - w / 2.0), top, roundf(w), roundf(h))
+		UiKit.panel(c, box, UiKit.PANEL_DARK, Station.ROLE_COLORS.navigator)
+		UiKit.overlays.guide = box
+		var head_base := box.position.y + 3 + UiKit.line_h(7) - 1
+		UiKit.text(c, Vector2(box.position.x + 6, head_base), head, 7, Station.ROLE_COLORS.navigator, 0)
+		# Step chips: done = green, current = blinking white.
 		for k in steps.size():
-			var dot := Vector2(box.end.x - 8 - (steps.size() - 1 - k) * 7, box.position.y + 6)
-			var col := Color("5cf07a") if k < _reached else (Color.WHITE if fmod(_time, 0.6) < 0.4 else Color("6b7390")) if k == i else Color("2c3454")
-			c.draw_rect(Rect2(dot - Vector2(2, 2), Vector2(4, 4)), col)
-		c.draw_string(font, box.position + Vector2(6, 20), "%d. %s" % [i + 1, text.to_upper()],
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color.WHITE)
+			var col := UiKit.GOOD if k < _reached else (Color.WHITE if fmod(_time, 0.6) < 0.4 else UiKit.DIM) if k == i else UiKit.FAINT
+			UiKit.chip(c, Rect2(box.end.x - 6 - (steps.size() - k) * 7 + 2, box.position.y + 4, 5, 5), col)
+		UiKit.text(c, Vector2(box.position.x + 6, box.end.y - 4), line, 8, UiKit.TEXT)
 		# Where to go: room outline + bouncing arrow over the station.
 		var role: String = step.role
 		var st := _station(role) if role != "" else null
@@ -461,19 +477,21 @@ func _draw_guide() -> void:
 			var room: Rect2 = ROOMS.get(role, Rect2())
 			var pulse := 0.4 + 0.4 * sin(_time * 6.0)
 			c.draw_rect(room.grow(1), Color(1.0, 0.85, 0.3, pulse), false, 1.0)
-			var tip := st.global_position + Vector2(0, -st.radius - 20 - 3.0 * absf(sin(_time * 5.0)))
-			c.draw_colored_polygon(PackedVector2Array([tip, tip + Vector2(-5, -6), tip + Vector2(-2, -6),
-					tip + Vector2(-2, -12), tip + Vector2(2, -12), tip + Vector2(2, -6), tip + Vector2(5, -6)]),
-					Color("ffc640"))
+			var tip := (st.global_position + Vector2(0, -st.radius - 20 - roundf(3.0 * absf(sin(_time * 5.0))))).round()
+			var arrow := PackedVector2Array([tip, tip + Vector2(-5, -6), tip + Vector2(-2, -6),
+					tip + Vector2(-2, -12), tip + Vector2(2, -12), tip + Vector2(2, -6), tip + Vector2(5, -6)])
+			var outline := PackedVector2Array()
+			for p in arrow:
+				outline.append(p + (p - (tip + Vector2(0, -7))).sign())  # 1 px bigger: ink outline
+			c.draw_colored_polygon(outline, UiKit.INK)
+			c.draw_colored_polygon(arrow, UiKit.WARN)
 			_arrow_to_offscreen_player(st)
 	if _result_left > 0.0:
-		var a := minf(_result_left, 1.0)
-		var col := Color("5cf07a") if _result_good else Color("ff5050")
-		var w2 := UiFont.width(_result, 10) + 16.0
-		var r := Rect2(240.0 - w2 / 2.0, 46, w2, 16)
-		c.draw_rect(r, Color(0.02, 0.03, 0.08, 0.85 * a))
-		c.draw_rect(r, Color(col, a), false, 1.0)
-		c.draw_string(font, r.position + Vector2(8, 12), _result, HORIZONTAL_ALIGNMENT_LEFT, -1, 10, Color(col, a))
+		# Outcome stamp: slams in, sits, fades in its last second.
+		var age := RESULT_TIME - _result_left
+		var col := UiKit.GOOD if _result_good else UiKit.BAD
+		col.a = minf(_result_left, 1.0)
+		UiKit.stamp(c, Vector2(240, top + 14), _result, col, clampf(1.0 - age / 0.18, 0.0, 1.0), 12)
 
 
 ## A small chevron at the local player's feet pointing toward the target station.

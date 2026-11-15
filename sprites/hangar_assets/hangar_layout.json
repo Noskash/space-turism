@@ -1,0 +1,749 @@
+{
+  "base_size": [
+    480,
+    270
+  ],
+  "map": "res://sprites/hangar_assets/maps/hangar_480x270.png",
+  "overlay": {
+    "note": "draw above the crew (gantry beam overhead)",
+    "z": "above_crew",
+    "texture": "res://sprites/hangar_assets/maps/hangar_overlay_480x270.png"
+  },
+  "walkable": [
+    {
+      "x": 8,
+      "y": 20,
+      "w": 464,
+      "h": 242
+    }
+  ],
+  "obstacles": [
+    {
+      "kind": "rack-engineer",
+      "x": 10,
+      "y": 20,
+      "w": 142,
+      "h": 33
+    },
+    {
+      "kind": "rack-comms",
+      "x": 324,
+      "y": 20,
+      "w": 79,
+      "h": 33
+    },
+    {
+      "kind": "rack-scientist",
+      "x": 10,
+      "y": 221,
+      "w": 116,
+      "h": 41
+    },
+    {
+      "kind": "rack-navigator",
+      "x": 383,
+      "y": 221,
+      "w": 83,
+      "h": 41
+    },
+    {
+      "kind": "board",
+      "x": 152,
+      "y": 20,
+      "w": 172,
+      "h": 26
+    },
+    {
+      "kind": "gantry-leg",
+      "x": 156,
+      "y": 82,
+      "w": 8,
+      "h": 6
+    },
+    {
+      "kind": "gantry-leg",
+      "x": 316,
+      "y": 82,
+      "w": 8,
+      "h": 6
+    },
+    {
+      "kind": "bench",
+      "x": 92,
+      "y": 92,
+      "w": 48,
+      "h": 16
+    },
+    {
+      "kind": "bench",
+      "x": 340,
+      "y": 92,
+      "w": 48,
+      "h": 16
+    },
+    {
+      "kind": "stand-light",
+      "x": 143,
+      "y": 172,
+      "w": 46,
+      "h": 53
+    },
+    {
+      "kind": "stand-balanced",
+      "x": 199,
+      "y": 172,
+      "w": 58,
+      "h": 65
+    },
+    {
+      "kind": "stand-heavy",
+      "x": 267,
+      "y": 172,
+      "w": 70,
+      "h": 77
+    },
+    {
+      "kind": "crates",
+      "x": 448,
+      "y": 112,
+      "w": 18,
+      "h": 41
+    },
+    {
+      "kind": "tool-chest",
+      "x": 444,
+      "y": 178,
+      "w": 22,
+      "h": 14
+    }
+  ],
+  "shelf_slots": [
+    {
+      "part_id": "solar_large",
+      "role": "engineer",
+      "name": "Large solar array",
+      "x": 36,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 12,
+        "y": 22,
+        "w": 48,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/solar_large.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/solar_large.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "rtg",
+      "role": "engineer",
+      "name": "RTG (nuclear power)",
+      "x": 70,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 62,
+        "y": 22,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/rtg.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/rtg.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "battery_large",
+      "role": "engineer",
+      "name": "Large battery",
+      "x": 88,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 80,
+        "y": 22,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/battery_large.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/battery_large.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "radiator",
+      "role": "engineer",
+      "name": "Radiator / heater",
+      "x": 106,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 98,
+        "y": 22,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/radiator.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/radiator.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "computer_radhard",
+      "role": "engineer",
+      "name": "Radiation-hardened computer",
+      "x": 124,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 116,
+        "y": 22,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/computer_radhard.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/computer_radhard.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "rad_shielding",
+      "role": "engineer",
+      "name": "Radiation shielding",
+      "x": 142,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 134,
+        "y": 22,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/rad_shielding.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/rad_shielding.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "antenna_high",
+      "role": "comms",
+      "name": "High-gain dish",
+      "x": 336,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 326,
+        "y": 22,
+        "w": 21,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/antenna_high.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/antenna_high.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "recorder_small",
+      "role": "comms",
+      "name": "Small data recorder",
+      "x": 357,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 349,
+        "y": 22,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/recorder_small.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/recorder_small.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "recorder_large",
+      "role": "comms",
+      "name": "Large data recorder",
+      "x": 375,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 367,
+        "y": 22,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/recorder_large.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/recorder_large.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "relay_radio",
+      "role": "comms",
+      "name": "Relay radio",
+      "x": 393,
+      "y": 33,
+      "interact_radius": 28,
+      "bin": {
+        "x": 385,
+        "y": 22,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/relay_radio.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/relay_radio.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "camera_hires",
+      "role": "scientist",
+      "name": "High-res camera",
+      "x": 20,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 12,
+        "y": 231,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/camera_hires.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/camera_hires.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "spectrometer",
+      "role": "scientist",
+      "name": "Spectrometer",
+      "x": 38,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 30,
+        "y": 231,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/spectrometer.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/spectrometer.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "radar_sounder",
+      "role": "scientist",
+      "name": "Radar sounder",
+      "x": 56,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 48,
+        "y": 231,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/radar_sounder.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/radar_sounder.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "thermal_imager",
+      "role": "scientist",
+      "name": "Thermal imager",
+      "x": 74,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 66,
+        "y": 231,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/thermal_imager.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/thermal_imager.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "magnetometer",
+      "role": "scientist",
+      "name": "Magnetometer",
+      "x": 95,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 84,
+        "y": 231,
+        "w": 22,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/magnetometer.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/magnetometer.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "particle_monitor",
+      "role": "scientist",
+      "name": "Solar particle monitor",
+      "x": 116,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 108,
+        "y": 231,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/particle_monitor.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/particle_monitor.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "tank_large",
+      "role": "navigator",
+      "name": "Large propellant tank",
+      "x": 393,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 385,
+        "y": 231,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/tank_large.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/tank_large.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "star_tracker",
+      "role": "navigator",
+      "name": "Star tracker",
+      "x": 411,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 403,
+        "y": 231,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/star_tracker.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/star_tracker.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "reaction_wheels",
+      "role": "navigator",
+      "name": "Reaction wheels",
+      "x": 429,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 421,
+        "y": 231,
+        "w": 16,
+        "h": 22
+      },
+      "icon": "res://sprites/upgrade_kit_assets/icons/reaction_wheels.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/reaction_wheels.png",
+      "missing_art": false
+    },
+    {
+      "part_id": "whipple_shield",
+      "role": "navigator",
+      "name": "Whipple shield",
+      "x": 451,
+      "y": 242,
+      "interact_radius": 26,
+      "bin": {
+        "x": 439,
+        "y": 231,
+        "w": 25,
+        "h": 22
+      },
+      "icon": "res://sprites/hangar_assets/placeholders/icons/whipple_shield.png",
+      "mounted": "res://sprites/hangar_assets/placeholders/mounted/whipple_shield.png",
+      "missing_art": true
+    }
+  ],
+  "racks": [
+    {
+      "role": "engineer",
+      "label": "ENGINEER - PWR",
+      "x": 10,
+      "y": 3,
+      "w": 142,
+      "h": 50,
+      "side": "north"
+    },
+    {
+      "role": "comms",
+      "label": "COMMS - COM",
+      "x": 324,
+      "y": 3,
+      "w": 79,
+      "h": 50,
+      "side": "north"
+    },
+    {
+      "role": "scientist",
+      "label": "SCIENTIST - SCI",
+      "x": 10,
+      "y": 221,
+      "w": 116,
+      "h": 41,
+      "side": "south"
+    },
+    {
+      "role": "navigator",
+      "label": "NAVIGATOR - NAV",
+      "x": 383,
+      "y": 221,
+      "w": 83,
+      "h": 41,
+      "side": "south"
+    }
+  ],
+  "assembly": {
+    "x": 156,
+    "y": 48,
+    "w": 168,
+    "h": 104,
+    "body_anchor": {
+      "x": 240,
+      "y": 100
+    },
+    "preview_origin": {
+      "x": 160,
+      "y": 38
+    },
+    "cradle": {
+      "x": 203,
+      "y": 63,
+      "w": 74,
+      "h": 74
+    }
+  },
+  "class_stands": [
+    {
+      "class": "light",
+      "x": 166,
+      "y": 195,
+      "interact_radius": 38,
+      "lamp": {
+        "x": 186,
+        "y": 174
+      },
+      "plinth": {
+        "x": 143,
+        "y": 172,
+        "w": 46,
+        "h": 53
+      }
+    },
+    {
+      "class": "balanced",
+      "x": 228,
+      "y": 201,
+      "interact_radius": 44,
+      "lamp": {
+        "x": 254,
+        "y": 174
+      },
+      "plinth": {
+        "x": 199,
+        "y": 172,
+        "w": 58,
+        "h": 65
+      }
+    },
+    {
+      "class": "heavy",
+      "x": 302,
+      "y": 207,
+      "interact_radius": 50,
+      "lamp": {
+        "x": 334,
+        "y": 174
+      },
+      "plinth": {
+        "x": 267,
+        "y": 172,
+        "w": 70,
+        "h": 77
+      }
+    }
+  ],
+  "benches": [
+    {
+      "x": 94,
+      "y": 94,
+      "w": 44,
+      "h": 9
+    },
+    {
+      "x": 342,
+      "y": 94,
+      "w": 44,
+      "h": 9
+    }
+  ],
+  "board": {
+    "x": 160,
+    "y": 2,
+    "w": 160,
+    "h": 42,
+    "fields": {
+      "class": {
+        "x": 272,
+        "y": 5,
+        "w": 44,
+        "h": 8
+      },
+      "mass": {
+        "bar": {
+          "x": 193,
+          "y": 17,
+          "w": 60,
+          "h": 3
+        },
+        "value": {
+          "x": 256,
+          "y": 15,
+          "w": 30,
+          "h": 7
+        }
+      },
+      "power": {
+        "bar": {
+          "x": 193,
+          "y": 23,
+          "w": 60,
+          "h": 3
+        },
+        "value": {
+          "x": 256,
+          "y": 21,
+          "w": 30,
+          "h": 7
+        }
+      },
+      "budget": {
+        "bar": {
+          "x": 193,
+          "y": 29,
+          "w": 60,
+          "h": 3
+        },
+        "value": {
+          "x": 256,
+          "y": 27,
+          "w": 30,
+          "h": 7
+        }
+      },
+      "slots": {
+        "bar": {
+          "x": 193,
+          "y": 35,
+          "w": 60,
+          "h": 3
+        },
+        "value": {
+          "x": 256,
+          "y": 33,
+          "w": 30,
+          "h": 7
+        }
+      },
+      "rocket": {
+        "x": 289,
+        "y": 33,
+        "w": 25,
+        "h": 7
+      }
+    }
+  },
+  "launch_door": {
+    "x": 406,
+    "y": 0,
+    "w": 64,
+    "h": 20,
+    "ready_lights": [
+      {
+        "x": 417,
+        "y": 2
+      },
+      {
+        "x": 430,
+        "y": 2
+      },
+      {
+        "x": 443,
+        "y": 2
+      },
+      {
+        "x": 456,
+        "y": 2
+      }
+    ],
+    "zone": {
+      "x": 406,
+      "y": 20,
+      "w": 64,
+      "h": 24
+    }
+  },
+  "entrance": {
+    "x": 0,
+    "y": 126,
+    "w": 8,
+    "h": 40
+  },
+  "spawns": [
+    {
+      "x": 30,
+      "y": 136
+    },
+    {
+      "x": 50,
+      "y": 136
+    },
+    {
+      "x": 30,
+      "y": 156
+    },
+    {
+      "x": 50,
+      "y": 156
+    }
+  ],
+  "carry": {
+    "offset": {
+      "x": 0,
+      "y": -16
+    },
+    "note": "draw the carried part's mounted sprite bottom-centred at feet + offset"
+  },
+  "sockets": {
+    "cell_glow": "res://sprites/hangar_assets/sockets/cell_glow.png",
+    "cell_glow_offset": {
+      "x": -2,
+      "y": -2
+    },
+    "mount_glow": "res://sprites/hangar_assets/sockets/mount_glow.png",
+    "mount_glow_offset": {
+      "x": -5,
+      "y": -5
+    },
+    "note": "white sprites: modulate with the role colour. Cells = preview_origin + body_origin + cell; mounts = preview_origin + parts_base.json class mounts."
+  },
+  "info_card": {
+    "texture": "res://sprites/hangar_assets/ui/info_card.png",
+    "patch_margins": {
+      "left": 6,
+      "top": 14,
+      "right": 6,
+      "bottom": 6
+    }
+  },
+  "placeholders": {
+    "whipple_shield": {
+      "icon": "res://sprites/hangar_assets/placeholders/icons/whipple_shield.png",
+      "mounted": "res://sprites/hangar_assets/placeholders/mounted/whipple_shield.png"
+    }
+  }
+}

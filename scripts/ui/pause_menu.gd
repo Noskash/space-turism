@@ -13,6 +13,8 @@ const ACCENT := Color("4fd8ff")
 const W := 190.0
 
 var leave_label := "LEAVE TO MAIN MENU"
+## Controls of the screen behind the menu (shown in the footer; "" = none).
+var controls := ""
 var _items: Array[String] = []
 var _index := 0
 var _confirm := ""        # item waiting for its second press
@@ -22,10 +24,11 @@ var _rows := {}           # item -> Rect2, for the mouse
 var _paused_tree := false
 
 
-static func attach(scene: Node, leave_text := "LEAVE TO MAIN MENU") -> PauseMenu:
+static func attach(scene: Node, leave_text := "LEAVE TO MAIN MENU", controls_text := "") -> PauseMenu:
 	var m := PauseMenu.new()
 	m.name = "PauseMenu"
 	m.leave_label = leave_text
+	m.controls = controls_text
 	scene.add_child(m)
 	return m
 
@@ -47,6 +50,7 @@ func _ready() -> void:
 	layer = 30
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	_canvas = Node2D.new()
+	UiKit.setup_canvas(_canvas)
 	_canvas.draw.connect(_draw_menu)
 	add_child(_canvas)
 	visible = false
@@ -65,7 +69,7 @@ func is_open() -> bool:
 func open() -> void:
 	if visible:
 		return
-	_items = ["resume", "help", "sound", "music", "fullscreen", "leave", "quit"]
+	_items = ["resume", "help", "sound", "music", "text", "fullscreen", "leave", "quit"]
 	if get_parent().get_node_or_null("Tutorial") == null:
 		_items.erase("help")
 	_index = 0
@@ -138,6 +142,8 @@ func _side(step: int) -> void:
 			_cycle_volume(step)
 		"music":
 			_cycle_music(step)
+		"text":
+			_cycle_text(step)
 		"fullscreen":
 			_activate("fullscreen")
 
@@ -156,6 +162,8 @@ func _activate(item: String) -> void:
 			_cycle_volume(1)
 		"music":
 			_cycle_music(1)
+		"text":
+			_cycle_text(1)
 		"fullscreen":
 			var full := DisplayServer.window_get_mode() >= DisplayServer.WINDOW_MODE_FULLSCREEN
 			DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED if full else DisplayServer.WINDOW_MODE_FULLSCREEN)
@@ -194,6 +202,12 @@ func _cycle_music(step: int) -> void:
 	Sfx.play("toggle")
 
 
+## TEXT SIZE: NORMAL / LARGE / HUGE for every text drawn through UiFont.px (UiKit).
+func _cycle_text(step: int) -> void:
+	UiFont.set_text_size(wrapi(UiFont.text_size() + step, 0, UiFont.SCALES.size()))
+	Sfx.play("toggle")
+
+
 func _label(item: String) -> String:
 	match item:
 		"resume":
@@ -208,6 +222,8 @@ func _label(item: String) -> String:
 			var cfg := ConfigFile.new()
 			cfg.load(SETTINGS)
 			return "MUSIC   < %s >" % Radio.LEVEL_NAMES[int(cfg.get_value("audio", "music", 0))]
+		"text":
+			return "TEXT SIZE   < %s >" % UiFont.SIZE_NAMES[UiFont.text_size()]
 		"fullscreen":
 			var full := DisplayServer.window_get_mode() >= DisplayServer.WINDOW_MODE_FULLSCREEN
 			return "FULLSCREEN   < %s >" % ("ON" if full else "OFF")
@@ -226,37 +242,44 @@ func _row_at(p: Vector2) -> String:
 
 
 func _draw_menu() -> void:
-	var font := UiFont.font()
-	_canvas.draw_rect(Rect2(0, 0, 480, 270), Color(0.01, 0.02, 0.06, 0.72))
-	var h := 44.0 + _items.size() * 16.0 + 20.0
-	var box := Rect2((480.0 - W) / 2.0, (270.0 - h) / 2.0, W, h)
-	_canvas.draw_rect(box.grow(2), Color(0, 0, 0, 0.6))
-	_canvas.draw_rect(box, Color("10142a"))
-	_canvas.draw_rect(box, ACCENT, false, 1.0)
+	var c := _canvas
+	c.draw_rect(Rect2(0, 0, 480, 270), Color(0.01, 0.02, 0.06, 0.72))
+	var w := minf(W * UiFont.SCALES[UiFont.text_size()], 300.0)
+	var row_h := maxf(16.0, UiKit.line_h(9) + 5)
+	var title_h := UiKit.line_h(14) + 10
+	var note_h := UiKit.line_h(6) + 2 if Network.is_in_room() else 0.0
+	var foot := PackedStringArray(["W/S CHOOSE · A/D CHANGE · SPACE SELECT · ESC BACK"])
+	if controls != "":
+		foot.append_array(UiKit.wrap("IN GAME: " + controls, 6, w - 20))
+	var foot_lines := foot.size()
+	var h := title_h + note_h + 4 + _items.size() * (row_h + 2) + 6 + foot_lines * UiKit.line_h(6) + 8
+	var box := Rect2(roundf((480.0 - w) / 2.0), roundf((270.0 - h) / 2.0), roundf(w), roundf(h))
+	UiKit.frame(c, box, ACCENT)
 	var title := "PAUSED" if _paused_tree else "MENU"
-	_canvas.draw_string(font, Vector2(240 - UiFont.width(title, 14) / 2.0, box.position.y + 20), title,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, ACCENT)
+	UiKit.text_c(c, 240, box.position.y + title_h - 4, title, 14, ACCENT, 3)
+	var y := box.position.y + title_h
 	if Network.is_in_room():
-		var note := "CO-OP: THE MISSION KEEPS RUNNING"
-		_canvas.draw_string(font, Vector2(240 - UiFont.width(note, 6) / 2.0, box.position.y + 31), note,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Color("ff8a5c"))
+		UiKit.text_c(c, 240, y + note_h - 2, "CO-OP: THE MISSION KEEPS RUNNING", 6, Color("ff8a5c"), 0)
+		y += note_h
+	y += 4
 	_rows.clear()
-	var y := box.position.y + 42.0
 	for i in _items.size():
 		var item := _items[i]
-		var row := Rect2(box.position.x + 10, y, W - 20, 14)
+		var row := Rect2(box.position.x + 10, y, box.size.x - 20, row_h)
 		_rows[item] = row
 		var selected := i == _index
-		var col := Color("ffc640") if selected else Color("c8d0e0")
+		var col := UiKit.WARN if selected else Color("c8d0e0")
 		if item == _confirm:
-			col = Color("ff5050")
+			col = UiKit.BAD
 		if selected:
-			_canvas.draw_rect(row, Color(col, 0.14))
-			_canvas.draw_rect(row, Color(col, 0.7), false, 1.0)
-		var text := _label(item)
-		_canvas.draw_string(font, Vector2(240 - UiFont.width(text, 9) / 2.0, y + 10), text,
-				HORIZONTAL_ALIGNMENT_LEFT, -1, 9, col)
-		y += 16.0
-	var keys := "W/S choose · SPACE select · ESC back"
-	_canvas.draw_string(font, Vector2(240 - UiFont.width(keys, 6) / 2.0, box.end.y - 7), keys,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 6, Color("6b7390"))
+			UiKit.panel(c, row, UiKit.PANEL, col)
+			# Little arrow marker that nudges right and back.
+			var nx := row.position.x + 4 + (1.0 if fmod(_time, 0.5) < 0.25 else 0.0)
+			var cy := roundf(row.get_center().y)
+			c.draw_colored_polygon(PackedVector2Array([Vector2(nx, cy - 3), Vector2(nx + 4, cy), Vector2(nx, cy + 3)]), col)
+		UiKit.text_c(c, 240, row.end.y - 5, _label(item), 9, col, 0 if not selected else 2)
+		y += row_h + 2
+	y += 6
+	for i in foot.size():
+		y += UiKit.line_h(6)
+		UiKit.text_c(c, 240, y - 2, foot[i], 6, UiKit.DIM if i == 0 else UiKit.FAINT.lightened(0.3), 0)
