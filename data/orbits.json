@@ -1,0 +1,38 @@
+{
+  "_comment": "Mars orbit the crew picks in the designer (SHIP column). Read by scripts/orbits.gd. FIRST-GUESS numbers (SIMPLIFIED), tune with humans. moi_mult scales the mission's moi_fuel; science_mult / contact_mult scale science observed / data sent per Mars year in orbit; drag = fuel % spent per Mars year keeping the orbit; delay_years = time before science starts (aerobraking). Facts: Odyssey aerobraked 77 days (332 passes) to a ~400 km near-polar orbit, mapping from Feb 2002; MRO aerobraked ~5 months (2006) to ~250-316 km; MAVEN maps between ~150 and ~6,200 km.",
+  "order": ["low", "elliptical", "aerobrake"],
+  "default": "elliptical",
+  "orbits": {
+    "low": {
+      "name": "LOW POLAR",
+      "short": "Low polar",
+      "shape": "~400 km circle over the poles",
+      "final": "low",
+      "moi_mult": 1.5, "science_mult": 1.5, "contact_mult": 0.6, "drag": 8.0, "delay_years": 0.0,
+      "desc": "Close up: sharp pictures of the whole planet. But a BIG brake burn, Earth often hidden behind Mars, and drag costs fuel every year.",
+      "real": "Odyssey and MRO map Mars from low polar orbits."
+    },
+    "elliptical": {
+      "name": "HIGH ELLIPTICAL",
+      "short": "Elliptical",
+      "shape": "150 x 6,200 km long oval",
+      "final": "elliptical",
+      "moi_mult": 0.7, "science_mult": 0.6, "contact_mult": 1.4, "drag": 2.0, "delay_years": 0.0,
+      "desc": "Small brake burn. Far from Mars most of the time: long talks with Earth, little drag, long life - but fewer close looks.",
+      "real": "MAVEN flies 150 x 6,200 km to sample the air at every height."
+    },
+    "aerobrake": {
+      "name": "AEROBRAKE",
+      "short": "Aerobrake",
+      "shape": "oval, dips, then ~300 km circle",
+      "final": "low",
+      "moi_mult": 0.8, "science_mult": 1.5, "contact_mult": 0.6, "drag": 8.0, "delay_years": 0.6,
+      "desc": "Small brake, then hundreds of dips through the air lower the orbit. Low-orbit science for little fuel, but months of waiting.",
+      "real": "MRO aerobraked about 5 months, Odyssey 77 days."
+    }
+  },
+  "parts": {
+    "radiator": {"delay_years": -0.25, "why": "radiator kept the ship cool through the hot dips"},
+    "solar_large": {"delay_years": -0.15, "why": "big solar wings acted as drag brakes, like MRO's"}
+  }
+}

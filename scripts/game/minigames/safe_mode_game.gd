@@ -74,15 +74,14 @@ func _process(delta: float) -> void:
 	if _done:
 		_outro += delta
 		if _outro > 0.8:
-			finished.emit({ok = true})
 			queue_free()
 		_canvas.queue_redraw()
 		return
-	if _t > ARM_TIME and Input.is_action_just_pressed(Controls.action("p1", "close")):
-		Sfx.play("undock")
-		abort()  # closed: the ticket stays, anyone can open it again
-		return
 	if _t > ARM_TIME:
+		if Input.is_action_just_pressed(Controls.action("p1", "leave")):
+			Sfx.play("undock")
+			abort()   # not a failure: the ticket stays, SPACE at the station reopens it
+			return
 		if Input.is_action_just_pressed(Controls.action("p1", "left")):
 			_cursor = wrapi(_cursor - 1, 0, _names.size())
 			Sfx.play("select")
@@ -106,6 +105,8 @@ func _flip() -> void:
 			_done = true
 			_frame.stamp("SAFE MODE", UiKit.GOOD)
 			Sfx.play("brownout", 1.4)
+			finished.emit({ok = true})   # report NOW: the outro is only for show (it used to
+			                             # report 0.8 s later, so a last-second success missed the wave)
 	else:
 		_lock = LOCKOUT
 		_flash = -1.0

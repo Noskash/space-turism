@@ -234,7 +234,7 @@ static func text_r(ci: CanvasItem, right_x: float, baseline: float, s: String, s
 
 
 static func text_w(s: String, size := 8) -> float:
-	return UiFont.width(s, UiFont.px(size))
+	return UiFont.width(s, size)
 
 
 ## Cap height-ish: how far above the baseline the text reaches.

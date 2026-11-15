@@ -30,6 +30,8 @@ const EMPTY_COLOR := Color(0.6, 0.7, 0.86, 0.35)
 var _card: LevelCard
 var _busy := false
 var _notice_tween: Tween
+## Создатель: «играть через интернет / по локальной сети» (пока в комнате никого нет).
+var _mode_button: Button
 
 
 func _ready() -> void:
@@ -51,9 +53,13 @@ func _ready() -> void:
 	_address_box.visible = host
 	_start_button.visible = host
 	if host:
-		_subtitle.text = "ДРУЗЬЯ ПОДКЛЮЧАЮТСЯ ПО АДРЕСУ НИЖЕ"
-		_status.text = "Друзья не могут войти? Сделай сеть «Частной» и разреши игре доступ в брандмауэре."
-		_show_addresses()
+		_mode_button = Button.new()
+		_mode_button.focus_mode = Control.FOCUS_ALL
+		_mode_button.add_theme_font_size_override("font_size", 15)
+		_mode_button.pressed.connect(_toggle_mode)
+		_address_box.add_child(_mode_button)
+		_address_box.move_child(_mode_button, _address_box.get_child_count() - 2)
+		_show_address_info()
 	else:
 		_subtitle.text = "ТЫ В КОМНАТЕ"
 		_status.text = "Ждём, пока создатель комнаты начнёт полёт…"
@@ -70,6 +76,41 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## Создатель: код комнаты (интернет) или IP-адрес (локальная сеть).
+func _show_address_info() -> void:
+	var caption := _address_box.get_node_or_null("AddressCaption") as Label
+	if Network.is_online_room():
+		_subtitle.text = "ДРУЗЬЯ ВХОДЯТ ПО КОДУ КОМНАТЫ — ИЗ ЛЮБОЙ ТОЧКИ МИРА"
+		_status.text = "Друзья вводят код в «Присоединиться». Комната закроется, если ты выйдешь."
+		if caption:
+			caption.text = "КОД КОМНАТЫ"
+		if Network.room_code == "":
+			_address.text = "…"
+			_address_hint.text = "Получаем код у сервера…"
+		else:
+			_address.text = Network.room_code
+			_address_hint.text = "Его вводят в «Присоединиться». Игра идёт через интернет."
+		_mode_button.text = "ИГРАТЬ ПО ЛОКАЛЬНОЙ СЕТИ (IP)"
+	else:
+		_subtitle.text = "ДРУЗЬЯ ПОДКЛЮЧАЮТСЯ ПО АДРЕСУ НИЖЕ"
+		_status.text = "Друзья не могут войти? Сделай сеть «Частной» и разреши игре доступ в брандмауэре."
+		if caption:
+			caption.text = "АДРЕС КОМНАТЫ"
+		_show_addresses()
+		_mode_button.text = "ИГРАТЬ ЧЕРЕЗ ИНТЕРНЕТ (КОД)"
+	# Сменить способ можно, только пока в комнате один создатель (иначе все вылетят).
+	_mode_button.visible = Network.players.size() <= 1
+
+
+func _toggle_mode() -> void:
+	if _busy or Network.players.size() > 1:
+		return
+	if Network.set_online(not Network.online) != OK:
+		_show_notice("Порт %d занят другой программой — остаёмся в игре через интернет." \
+				% Network.DEFAULT_PORT)
+	_mode_button.grab_focus()
+
+
 func _show_addresses() -> void:
 	var addresses := Network.get_local_addresses()
 	if addresses.is_empty():
@@ -84,6 +125,10 @@ func _show_addresses() -> void:
 
 
 func _refresh() -> void:
+	if not Network.is_in_room():
+		return
+	if _mode_button:
+		_show_address_info()
 	if Network.level and _card == null:
 		_card = CARD_SCENE.instantiate() as LevelCard
 		_card_slot.add_child(_card)

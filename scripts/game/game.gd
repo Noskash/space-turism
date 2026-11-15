@@ -42,6 +42,9 @@ func _ready() -> void:
 	_hud.local = _local
 	Vfx.new().setup(self, _map, _crew)
 	ShipLighting.new().setup(self, _map, _crew)
+	HullDamage.new().setup(self, _map, _crew)
+	add_child(GameOver.new())
+	add_child(MissionReport.new())   # campaign missions: report after Mars Orbit Insertion
 	add_child(Radio.new().setup(_hud.radio_label))
 	var radio_set := RadioSet.new()
 	radio_set.crew = _crew
@@ -54,12 +57,19 @@ func _ready() -> void:
 	if _net.is_authority():
 		_mission.crew_size = maxi(Network.players.size(), 1) if _net.active else 1
 		_mission.start(DesignRules.chosen)  # clients get the host's state through NetSync
-	PauseMenu.attach(self, "ABANDON MISSION", "WASD MOVE · SHIFT RUN · SPACE USE · TAB TASKS · K SKIN · H HELP")
+		_mission.set_crew(_roster())
+	Events.state_changed.connect(_apply_crew_health)
+	add_child(CrewPanel.new())   # astronauts + radiation dose, bottom left
+	PauseMenu.attach(self, "ABANDON MISSION", "WASD MOVE · SHIFT RUN · SPACE USE · Q LEAVE · E RADAR · TAB TASKS · J CODEX · H HELP")
 	_guide = EventGuide.new()
 	_guide.name = "EventGuide"
 	_guide.map = _map
 	_guide.local = _local
 	add_child(_guide)
+	var radar := RadarScreen.new()
+	radar.map = _map
+	radar.local = _local
+	add_child(radar)
 	_tutorial = Tutorial.attach(self, "cruise", [
 		{title = "Fly the mission", rect = UiKit.hud_rect("tasks").grow(1),
 		 body = "Problems pop up as tasks, top right, each with a countdown in its role's colour. Run to that station before the timer runs out. SHIFT = run, TAB folds the list."},
@@ -68,23 +78,54 @@ func _ready() -> void:
 		{title = "Action button", rect = UiKit.hud_rect("action").grow(1),
 		 body = "Bottom right shows what SPACE does right now: DOCK at a station, REPAIR, FIX, DOWNLINK... Grey = nothing to do here."},
 		{title = "Stations", rect = Rect2(336, 34, 108, 168),
-		 body = "Walk into a station's ring and press SPACE to dock. A/D pick an option, HOLD SPACE to work, W/S leave. BRIDGE (NAV): course-correction burns cost fuel and power."},
+		 body = "Walk into a station's ring and press SPACE to dock. A/D pick an option, HOLD SPACE to work, Q leaves. BRIDGE (NAV): course-correction burns cost fuel and power."},
 		{title = "Engine room", rect = Rect2(30, 138, 118, 112),
 		 body = "PWR: switch loads (instruments, transmitter, heater) on and off and reset storm faults. The battery drains whenever loads use more power than you make."},
 		{title = "Comms", rect = Rect2(30, 34, 118, 80),
 		 body = "COM: HOLD SPACE to send data home - only while a Deep Space Network station is in view and the transmitter is on. Full storage = lost science."},
 		{title = "Science lab", rect = Rect2(160, 34, 164, 80),
-		 body = "SCI: when a science window opens, HOLD SPACE to observe. Instruments must be on - they eat power and fill storage."},
+		 body = "SCI: when a science window opens, HOLD SPACE to observe (instruments ON). Science goes into storage (DATA bar) and only SCORES once Comms sends it home. Full storage = new science is lost."},
 		{title = "Events", rect = Rect2(UiKit.hud_rect("progress").position.x, UiKit.hud_rect("progress").end.y + 2, UiKit.hud_rect("progress").size.x, 14),
 		 body = "Radiation storms, comet debris, faults, science windows... Big ones slide a banner across the screen, then stay here with a countdown. The first time each one happens, a walkthrough shows you how to beat it."},
 		{title = "Missed tickets",
-		 body = "A missed ticket knocks its station OFFLINE until someone docks and holds a repair. Score = science that reached Earth. H shows this again."},
+		 body = "A missed ticket knocks its station OFFLINE until someone docks and holds a repair. H shows this again."},
+		{title = "Your goals", rect = UiKit.hud_rect("goals", UiKit.hud_rect("progress")),
+		 body = "The mission goals stay up here. Each goal met = 1 star. At Mars the NAVIGATOR must hold the brake (fuel + power). J opens the CODEX of space terms."},
 	])
 
 
 func _process(delta: float) -> void:
 	if _net.is_authority() and not Tutorial.any_open():  # cruise tutorial or an event walkthrough
+		_mission.crew_rooms = _crew_rooms()
 		_mission.tick(delta)
+
+
+# --- astronauts: the sim keeps dose + sickness per crew key, the game knows where everyone stands ---
+
+## Crew key (node name, the same on every peer) -> crew role.
+func _roster() -> Dictionary:
+	var out := {}
+	for member in _crew.get_children():
+		if member is CrewMember:
+			out[str(member.name)] = member.role
+	return out
+
+
+## Host only: which room each crew member stands in (the Cargo bay is the storm shelter).
+func _crew_rooms() -> Dictionary:
+	var out := {}
+	for member in _crew.get_children():
+		if member is CrewMember:
+			out[str(member.name)] = _map.room_at(member.position)
+	return out
+
+
+## Every peer: radiation sickness slows the astronaut (walking + station work).
+func _apply_crew_health(state: Dictionary) -> void:
+	var crew: Dictionary = state.get("crew", {})
+	for member in _crew.get_children():
+		if member is CrewMember and crew.has(str(member.name)):
+			member.sick = bool(crew[str(member.name)].get("sick", false))
 
 
 ## Offline: one crew member who can use every station.
@@ -158,7 +199,8 @@ func _on_crew_received(peer_id: int, snapshot: Array) -> void:
 ## A player left: remove their crew member (their stations stay unmanned).
 func _on_room_changed() -> void:
 	for member in _crew.get_children():
-		if member is CrewMember and member.remote 				and not Network.players.has(member.name.trim_prefix("Crew_").to_int()):
+		if member is CrewMember and member.remote \
+				and not Network.players.has(member.name.trim_prefix("Crew_").to_int()):
 			_update_companion("", member)
 			member.queue_free()
 

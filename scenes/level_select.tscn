@@ -25,6 +25,7 @@ script = ExtResource("4_data")
 title = "Марс"
 scene = "res://scenes/design/designer.tscn"
 description = "Пыльные бури, каньон Маринер и сувениры с вершины Олимпа."
+has_missions = true
 accent_color = Color(1, 0.5, 0.3, 1)
 planet_color_a = Color(0.42, 0.13, 0.06, 1)
 planet_color_b = Color(0.88, 0.45, 0.22, 1)

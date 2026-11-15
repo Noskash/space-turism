@@ -33,7 +33,7 @@ func _ready() -> void:
 	_address_input.text = _last_address
 	_on_address_changed(_address_input.text)
 	if Network.pending_message.is_empty():
-		_set_status("Адрес показан на экране комнаты у её создателя.", STATUS_INFO)
+		_set_status("Код (4 буквы) или адрес показан на экране комнаты у её создателя.", STATUS_INFO)
 	else:
 		_set_status(Network.pending_message, STATUS_ERROR)
 		Network.pending_message = ""
@@ -58,14 +58,20 @@ func _try_join() -> void:
 		return
 	var address := _address_input.text.strip_edges()
 	if address.is_empty():
-		_set_status("Сначала введи адрес комнаты.", STATUS_ERROR)
+		_set_status("Сначала введи код или адрес комнаты.", STATUS_ERROR)
 		return
+	if RelayPeer.looks_like_code(address):
+		address = address.to_upper()
+		_address_input.text = address
 	_last_address = address
 	if Network.join_room(address) != OK:
-		_set_status("Не похоже на адрес. Пример: 192.168.1.5 или 192.168.1.5:7777", STATUS_ERROR)
+		_set_status("Не похоже на код или адрес. Пример: KRMX, 192.168.1.5 или 192.168.1.5:7777", STATUS_ERROR)
 		return
 	_set_connecting(true)
-	_set_status("Подключение к %s…" % address, STATUS_INFO)
+	if RelayPeer.looks_like_code(address):
+		_set_status("Ищем комнату %s через интернет…" % address, STATUS_INFO)
+	else:
+		_set_status("Подключение к %s…" % address, STATUS_INFO)
 
 
 func _on_joined_room() -> void:

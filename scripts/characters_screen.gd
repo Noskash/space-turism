@@ -33,6 +33,19 @@ var _ring_style: StyleBoxFlat
 
 
 func _ready() -> void:
+	# Mars mission crew roster: the astronauts from data/astronauts.json replace the old tourism cards.
+	var crew := Astronauts.data().get("astronauts", {}) as Dictionary
+	if not crew.is_empty():
+		characters = []
+		for id: String in ["navigator", "engineer", "comms", "scientist", "commander"]:
+			if not crew.has(id):
+				continue
+			var c := CharacterData.new()
+			c.display_name = str(crew[id].name)
+			c.role = str(crew[id].role)
+			c.description = str(crew[id].bio)
+			c.accent_color = Color(str(crew[id].color))
+			characters.append(c)
 	# Базовые стили берём из темы и для каждого персонажа перекрашиваем их копии.
 	_card_style = _card.get_theme_stylebox("panel") as StyleBoxFlat
 	_portrait_style = _portrait.get_theme_stylebox("panel") as StyleBoxFlat

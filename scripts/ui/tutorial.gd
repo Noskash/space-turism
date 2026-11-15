@@ -149,7 +149,7 @@ func _input(event: InputEvent) -> void:
 				_next()
 			KEY_X:
 				_close(true)
-			KEY_ESCAPE:
+			KEY_ESCAPE, KEY_Q:
 				_close(false)
 	elif event is InputEventMouseMotion:
 		_hover = _button_at(_canvas.get_local_mouse_position())
@@ -188,7 +188,7 @@ func _draw_canvas() -> void:
 		c.draw_rect(Rect2(h.position.x - 1, h.position.y - 1, 2, h.size.y + 2), col)
 		c.draw_rect(Rect2(h.end.x - 1, h.position.y - 1, 2, h.size.y + 2), col)
 
-	var box_w := minf(BOX_W * UiFont.SCALES[UiFont.text_size()], 440.0)
+	var box_w := minf(BOX_W * UiFont.scale(), 440.0)
 	var lines := UiKit.wrap(str(pane.get("body", "")), BODY, box_w - PAD * 2)
 	var title_h := UiKit.line_h(9) + 6
 	var line_h := UiKit.line_h(BODY)

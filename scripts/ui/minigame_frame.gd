@@ -14,7 +14,7 @@ const TITLE_H := 20.0
 var title := ""
 var icon := ""
 var color := Color.WHITE
-## Shows the Q key cap; the game itself handles the key (Controls "close").
+## Shows the Q key cap; the game itself handles the key (Controls "leave").
 var closable := true
 
 var _stamp := ""

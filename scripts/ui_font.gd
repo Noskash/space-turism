@@ -4,23 +4,57 @@ extends RefCounted
 ## Gameplay scenes run in canvas_items stretch mode (PixelMode), so text is rasterised at the
 ## real screen resolution while the pixel art stays on the 480x270 grid.
 ##
-## TEXT SIZE (ESC menu: NORMAL / LARGE / HUGE) scales every size that goes through px().
-## Draw text with UiKit.text() (it calls px()), or pass sizes through UiFont.px() yourself.
+## TEXT SIZE (ESC menu: NORMAL / LARGE / HUGE, user://settings.cfg [ui] text) scales every size that
+## goes through px(); width() takes a BASE size and measures with the same scale, so centring /
+## wrapping / boxes sized from width() follow. Draw with UiKit.text() (it calls px()) or pass sizes
+## through UiFont.px() yourself.
 
 const PATH := "res://ui/fonts/ShareTechMono-Regular.ttf"
 ## Default size in 480x270 units (x3 at 1440p, x4 at 4K... it stays sharp).
 const SIZE := 8
 const SETTINGS := "user://settings.cfg"
-const SCALES := [1.0, 1.25, 1.5]
-const SIZE_NAMES := ["NORMAL", "LARGE", "HUGE"]
+const SCALES := [1.0, 1.15, 1.3]
+const SCALE_NAMES := ["NORMAL", "LARGE", "HUGE"]
+const LABEL_GROUP := "ui_font_label"
 
 static var _font: Font
-static var _level := -1
+static var _level := -1      # loaded lazily from the settings
 ## Highest TEXT SIZE level the current screen can fit (dense screens lower it, e.g. the designer
 ## caps at LARGE). Set it in _enter_tree, reset to 2 in _exit_tree.
 static var max_level := 2
 ## Bumps every time the text size changes (for anything that caches sizes).
 static var revision := 0
+
+
+## The saved TEXT SIZE setting: 0 NORMAL, 1 LARGE, 2 HUGE.
+static func level() -> int:
+	if _level < 0:
+		var cfg := ConfigFile.new()
+		cfg.load(SETTINGS)
+		_level = clampi(int(cfg.get_value("ui", "text", 0)), 0, SCALES.size() - 1)
+	return _level
+
+
+## The scale in use on this screen (the setting, capped by max_level).
+static func scale() -> float:
+	return SCALES[mini(level(), max_level)]
+
+
+## A font size in 480x270 units, scaled by the TEXT SIZE setting.
+static func px(size: int) -> int:
+	return maxi(roundi(size * scale()), 1)
+
+
+## Changes + saves the setting; labels made by label() are resized on the spot.
+static func set_level(index: int, tree: SceneTree) -> void:
+	_level = wrapi(index, 0, SCALES.size())
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS)
+	cfg.set_value("ui", "text", _level)
+	cfg.save(SETTINGS)
+	revision += 1
+	for l in tree.get_nodes_in_group(LABEL_GROUP):
+		(l as Label).add_theme_font_size_override("font_size", px(int(l.get_meta("base_size", SIZE))))
 
 
 static func font() -> Font:
@@ -36,32 +70,9 @@ static func font() -> Font:
 	return _font
 
 
-## TEXT SIZE setting: 0 NORMAL, 1 LARGE, 2 HUGE (saved in user://settings.cfg).
-static func text_size() -> int:
-	if _level < 0:
-		var cfg := ConfigFile.new()
-		cfg.load(SETTINGS)
-		_level = clampi(int(cfg.get_value("ui", "text_size", 0)), 0, SCALES.size() - 1)
-	return _level
-
-
-static func set_text_size(level: int) -> void:
-	_level = clampi(level, 0, SCALES.size() - 1)
-	var cfg := ConfigFile.new()
-	cfg.load(SETTINGS)
-	cfg.set_value("ui", "text_size", _level)
-	cfg.save(SETTINGS)
-	revision += 1
-
-
-## A base size (480x270 units) scaled by the TEXT SIZE setting.
-static func px(size: int) -> int:
-	return maxi(roundi(size * SCALES[mini(text_size(), max_level)]), 1)
-
-
-## Width of `text` at an already scaled size (use UiKit.text_w for base sizes).
+## Width of `text` at a BASE size (480x270 units; TEXT SIZE applies, like px()).
 static func width(text: String, size := SIZE) -> float:
-	return font().get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, size).x
+	return font().get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, px(size)).x
 
 
 ## A Label already styled for the HUD (size is a base size; TEXT SIZE applies).
@@ -70,6 +81,8 @@ static func label(text: String, size := SIZE) -> Label:
 	l.text = text
 	l.add_theme_font_override("font", font())
 	l.add_theme_font_size_override("font_size", px(size))
+	l.set_meta("base_size", size)
+	l.add_to_group(LABEL_GROUP)
 	l.add_theme_color_override("font_outline_color", Color.BLACK)
 	l.add_theme_constant_override("outline_size", 2)
 	return l

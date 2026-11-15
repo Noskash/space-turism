@@ -11,6 +11,11 @@ signal finished(result: Dictionary)
 const GAUGE := Rect2(110, 166, 260, 14)
 const ARM_TIME := 0.25          # ignore the SPACE press that opened the game
 const LOCKOUT := 0.4
+## What the player sees lags the sim by a frame or two (render + display), and the needle moves
+## several pixels per frame. A press counts if the needle was in the zone at any point this long ago,
+## so "it looked green when I pressed" is always a hit.
+const GRACE := 0.1
+const SPEED_UP := 0.25          # gauge widths/s added per charge
 
 var charges_needed := 3
 var deadline := 15.0            # seconds until the wave (from the ticket)
@@ -30,6 +35,7 @@ var _aborted := false
 var _rng := RandomNumberGenerator.new()
 var _frame := MinigameFrame.new("RAISE THE SHIELDS", "shield", Color("4fd8ff"))
 var _total := 0.0              # deadline when the game opened (for the bar)
+var _trail: Array[Vector2] = []  # recent needle positions (x = time, y = needle), newest last
 
 
 func _ready() -> void:
@@ -66,7 +72,6 @@ func _process(delta: float) -> void:
 	if _done:
 		_outro += delta
 		if _outro > 0.8:
-			finished.emit({ok = true})
 			queue_free()
 		_canvas.queue_redraw()
 		return
@@ -74,27 +79,54 @@ func _process(delta: float) -> void:
 	if _needle >= 1.0 or _needle <= 0.0:
 		_needle = clampf(_needle, 0.0, 1.0)
 		_dir = -_dir
-	if _t > ARM_TIME and Input.is_action_just_pressed(Controls.action("p1", "close")):
-		Sfx.play("undock")
-		abort()  # closed: the ticket stays, anyone can open it again
-		return
-	if _t > ARM_TIME and _lock <= 0.0 and Input.is_action_just_pressed(Controls.action("p1", "interact")):
-		if _needle >= _zone.x and _needle <= _zone.y:
-			_charged += 1
-			_flash = 1.0
-			Sfx.play("fixed", 0.9 + _charged * 0.15)
-			if _charged >= charges_needed:
-				_done = true
-				_frame.stamp("SHIELDS UP", UiKit.GOOD)
-				Sfx.play("orbit")
-			else:
-				_speed += 0.35
-				_new_zone()
-		else:
-			_lock = LOCKOUT
-			_flash = -1.0
-			Sfx.play("denied")
+	_trail.append(Vector2(_t, _needle))
+	while _trail.size() > 2 and _trail[0].x < _t - GRACE:
+		_trail.pop_front()
 	_canvas.queue_redraw()
+
+
+## SPACE is handled the moment it arrives (not polled once per frame).
+func _input(event: InputEvent) -> void:
+	if not _done and event.is_action_pressed(Controls.action("p1", "leave")):
+		get_viewport().set_input_as_handled()
+		Sfx.play("undock")
+		abort()   # not a failure: the ticket stays, SPACE at the table reopens it
+		return
+	if _done or not event.is_action_pressed(Controls.action("p1", "interact")) or event.is_echo():
+		return
+	get_viewport().set_input_as_handled()
+	if _t <= ARM_TIME or _lock > 0.0:
+		return
+	if _was_in_zone():
+		_charged += 1
+		_flash = 1.0
+		Sfx.play("fixed", 0.9 + _charged * 0.15)
+		if _charged >= charges_needed:
+			_done = true
+			_frame.stamp("SHIELDS UP", UiKit.GOOD)
+			Sfx.play("orbit")
+			finished.emit({ok = true})   # report NOW: the outro is only for show (it used to
+			                             # report 0.8 s later, so a last-second success missed the wave)
+		else:
+			_speed += SPEED_UP
+			_new_zone()
+	else:
+		_lock = LOCKOUT
+		_flash = -1.0
+		Sfx.play("denied")
+
+
+## The needle is in the zone now, or was within the last GRACE seconds (also between two samples:
+## a fast needle can jump over a narrow zone in one frame).
+func _was_in_zone() -> bool:
+	var prev := _needle
+	for p in _trail:
+		var lo := minf(prev, p.y)
+		var hi := maxf(prev, p.y)
+		if hi >= _zone.x and lo <= _zone.y:
+			return true
+		prev = p.y
+	return _needle >= _zone.x and _needle <= _zone.y
 
 
 func _new_zone() -> void:
@@ -103,6 +135,7 @@ func _new_zone() -> void:
 	if absf(a + w / 2.0 - _needle) < 0.2:  # not right under the needle
 		a = fposmod(a + 0.4, 0.92 - w)
 	_zone = Vector2(a, a + w)
+	_trail.clear()   # the old positions belonged to the old zone
 
 
 func _draw_game() -> void:

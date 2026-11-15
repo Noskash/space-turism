@@ -267,6 +267,26 @@
       }
     },
     {
+      "id": "whipple_shield",
+      "name": "Whipple shield",
+      "role": "navigator",
+      "mount": "cell",
+      "replaces": null,
+      "slot_cost": 1,
+      "base_kit": false,
+      "icon": "icons/whipple_shield.png",
+      "mounted": "mounted/whipple_shield.png",
+      "mounted_size": [
+        10,
+        10
+      ],
+      "stats": {
+        "mass_kg": null,
+        "power_w": null,
+        "cost": null
+      }
+    },
+    {
       "id": "camera_hires",
       "name": "High-res camera",
       "role": "scientist",

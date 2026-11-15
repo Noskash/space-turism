@@ -12,11 +12,12 @@ const SCHEMES := {
 		"right": [KEY_D, KEY_RIGHT],
 		"up": [KEY_W, KEY_UP],
 		"down": [KEY_S, KEY_DOWN],
-		"interact": [KEY_SPACE, KEY_E],
+		"interact": [KEY_SPACE],
+		"leave": [KEY_Q],  # leave a station / close a minigame or dialog (A/D are station choices)
+		"radar": [KEY_E],  # Bridge radar on/off while docked there
 		"run": [KEY_SHIFT],  # hold while walking
 		"skin": [KEY_K],  # cycle skins (until the character screen picks them)
 		"tasks": [KEY_TAB],  # fold / unfold the HUD task list
-		"close": [KEY_Q],  # close a station minigame (shields, safe mode)
 	},
 }
 
@@ -25,13 +26,21 @@ static func action(scheme: String, verb: String) -> StringName:
 	return StringName("%s_%s" % [scheme, verb])
 
 
+static var _key_names := {}   # "scheme/verb" -> label (UI asks every frame)
+
+
 ## Label of the first key bound to `verb` ("SPACE", "TAB", ...), for key caps in the UI.
 static func key_name(scheme: String, verb: String) -> String:
-	var keys: Array = SCHEMES.get(scheme, {}).get(verb, [])
-	if keys.is_empty():
-		return "?"
-	var code := DisplayServer.keyboard_get_keycode_from_physical(keys[0])
-	return OS.get_keycode_string(code if code != KEY_NONE else keys[0]).to_upper()
+	var id := scheme + "/" + verb
+	if not _key_names.has(id):
+		var keys: Array = SCHEMES.get(scheme, {}).get(verb, [])
+		if keys.is_empty():
+			return "?"
+		var code := KEY_NONE
+		if DisplayServer.get_name() != "headless":  # (headless: no keyboard layout)
+			code = DisplayServer.keyboard_get_keycode_from_physical(keys[0])
+		_key_names[id] = OS.get_keycode_string(code if code != KEY_NONE else keys[0]).to_upper()
+	return _key_names[id]
 
 
 ## Safe to call more than once.

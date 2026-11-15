@@ -2,9 +2,9 @@
   "_note": "FIRST-GUESS numbers, not balanced. Tune here only. Money in $M, mass in kg, power in W (+ makes, - uses). Battery % per second in cruise = watts / battery_wh. Mass/cost of the base kit are inside each class's dry_mass_kg / cost.",
   "total_budget": 300,
   "classes": {
-    "light":    {"name": "Light",    "cost": 70,  "dry_mass_kg": 260, "mass_limit_kg": 420},
-    "balanced": {"name": "Balanced", "cost": 110, "dry_mass_kg": 380, "mass_limit_kg": 640},
-    "heavy":    {"name": "Heavy",    "cost": 140, "dry_mass_kg": 520, "mass_limit_kg": 900}
+    "light":    {"name": "Light",    "cost": 70,  "dry_mass_kg": 260, "mass_limit_kg": 420, "hull_hit": 16},
+    "balanced": {"name": "Balanced", "cost": 110, "dry_mass_kg": 380, "mass_limit_kg": 640, "hull_hit": 12},
+    "heavy":    {"name": "Heavy",    "cost": 140, "dry_mass_kg": 520, "mass_limit_kg": 900, "hull_hit": 9}
   },
   "launchers": [
     {"id": "light",  "name": "Light rocket",  "capacity_kg": 470,  "cost": 30},
@@ -58,14 +58,17 @@
                          "effects": {"dsn_pass": 4.0},
                          "desc": "Relay: ground passes last 4 s longer."},
     "tank_large":       {"mass_kg": 70, "power_w": -5, "cost": 20, "load": "base",
-                         "effects": {"burn_mult": 0.5},
-                         "desc": "Double fuel. Fuel is mass: needs a bigger rocket."},
+                         "effects": {"burn_mult": 0.5, "moi_mult": 0.5},
+                         "desc": "Double fuel: burns and the Mars brake take half as much of the tank. Fuel is mass: needs a bigger rocket."},
     "star_tracker":     {"mass_kg": 5, "power_w": -10, "cost": 20, "load": "base",
                          "effects": {"burn_mult": 0.75, "dust_warning": 4},
                          "desc": "Spots comet debris 4 s earlier and marks incoming chunks; burns waste 25% less fuel."},
     "reaction_wheels":  {"mass_kg": 20, "power_w": -25, "cost": 25, "load": "base",
                          "effects": {"leak_mult": 0.35, "steer_free": 1},
                          "desc": "Turn without thrusters: fast, fuel-free turning through debris; fewer leaks."},
+    "whipple_shield":   {"mass_kg": 35, "power_w": -5, "cost": 20, "load": "base",
+                         "effects": {"hull_hit_mult": 0.5, "breach_mult": 0.6},
+                         "desc": "Bumper layers that shatter debris before it reaches the hull: half the hull damage, fewer breaches."},
     "camera_hires":     {"mass_kg": 10, "power_w": -30, "cost": 25, "load": "instruments",
                          "effects": {"data_rate": 0.4, "science": 8},
                          "desc": "Sharp images. More science, more data."},

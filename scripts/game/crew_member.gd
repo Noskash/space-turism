@@ -11,6 +11,9 @@ signal skin_changed(skin: String)
 const SPEED := 80.0      # px/s in the 480x270 world
 const RUN_SPEED := 135.0  # while the run key is held
 
+## Radiation sickness (set by the game from the sim's state.crew): slower walking and station work.
+var sick := false
+
 ## Input scheme from Controls.SCHEMES ("p1", ...).
 @export var scheme := "p1"
 ## Crew role(s): "navigator", "comms+scientist" when one player covers two stations,
@@ -26,6 +29,15 @@ const RUN_SPEED := 135.0  # while the run key is held
 const ALARM_TIME := 1.0  # seconds of the alarm animation when a ticket hits our role
 
 var ship_map: ShipMap
+## Carrying a toolbox (lockers in Cargo / Engine Room): needed to patch hull breaches. Synced.
+var has_toolbox := false:
+	set(value):
+		has_toolbox = value
+		if _tool:
+			_tool.queue_redraw()
+var _tool: Node2D                # draws the toolbox in hand, over the sprite
+var _patch_id := -1              # breach being patched (HOLD USE next to it with a toolbox)
+var _patch := 0.0
 ## Network puppet: driven by snapshots from its owner instead of the keyboard.
 var remote := false
 ## Draw a small marker over the head (which one is me, in co-op).
@@ -58,12 +70,29 @@ func _ready() -> void:
 	collider.position = Vector2(0, -2)  # footprint just above the feet
 	add_child(collider)
 	_apply_skin()
+	_tool = Node2D.new()
+	_tool.name = "Toolbox"
+	_tool.z_index = 1  # over the skin sprite
+	_tool.draw.connect(_draw_toolbox)
+	add_child(_tool)
 	Events.event_started.connect(_on_event_started)
 	# Name tag + "this is me" marker on their own node above the ship lighting (z 40/41).
 	_tag = Node2D.new()
 	_tag.z_index = 45
 	_tag.draw.connect(_draw_tag)
 	add_child(_tag)
+
+
+## Red toolbox held at the side the crew member faces.
+func _draw_toolbox() -> void:
+	if not has_toolbox:
+		return
+	var side := -1.0 if _facing.x < -0.1 else 1.0
+	var o := Vector2(5.0 * side - 3.0, -7.0)
+	_tool.draw_rect(Rect2(o + Vector2(1, -2), Vector2(4, 1)), Color("3a3a44"))   # handle
+	_tool.draw_rect(Rect2(o, Vector2(6, 4)), Color("d8402e"))
+	_tool.draw_rect(Rect2(o + Vector2(0, 1), Vector2(6, 1)), Color("8c2a22"))
+	_tool.draw_rect(Rect2(o + Vector2(2, 2), Vector2(2, 1)), Color("f2c14a"))   # latch
 
 
 func _physics_process(delta: float) -> void:
@@ -84,9 +113,11 @@ func _physics_process(delta: float) -> void:
 
 
 func _process_walking() -> void:
+	if _process_hull():
+		return
 	var dir := Input.get_vector(_act("left"), _act("right"), _act("up"), _act("down"))
 	running = dir != Vector2.ZERO and Input.is_action_pressed(_act("run"))
-	velocity = dir * (RUN_SPEED if running else SPEED)
+	velocity = dir * (RUN_SPEED if running else SPEED) * (Astronauts.dose("sick_slowdown") if sick else 1.0)
 	if dir != Vector2.ZERO:
 		_facing = dir
 	move_and_slide()
@@ -95,18 +126,71 @@ func _process_walking() -> void:
 		_dock(_station)
 		Sfx.play("dock")
 		return
-	if _station == null and RadioSet.in_reach(global_position) and Input.is_action_just_pressed(_act("interact")):
+	var hull := HullDamage.current
+	if _station == null and hull and hull.locker_in_reach(global_position) >= 0 \
+			and Input.is_action_just_pressed(_act("interact")):
+		has_toolbox = not has_toolbox
+		Sfx.play("clank")
+	elif _station == null and hull and not has_toolbox and not hull.toolbox_near(global_position).is_empty() \
+			and Input.is_action_just_pressed(_act("interact")):
+		Events.action_requested.emit("team", {type = "take_tool", id = int(hull.toolbox_near(global_position).id)})
+		has_toolbox = true
+		Sfx.play("clank", 1.2)
+	elif _station == null and RadioSet.in_reach(global_position) and Input.is_action_just_pressed(_act("interact")):
 		Events.action_requested.emit("team", {type = "radio"})
 		Sfx.play("toggle")
+	elif _station == null and has_toolbox and hull and hull.breach_near(global_position).is_empty() \
+			and Input.is_action_just_pressed(_act("interact")):
+		# Nothing else to use here: put the toolbox down on the floor (anyone can pick it up).
+		Events.action_requested.emit("team", {type = "drop_tool", x = global_position.x, y = global_position.y - 2.0})
+		has_toolbox = false
+		Sfx.play("clank", 0.8)
 	var moving := get_real_velocity().length() > 1.0
 	_animate(moving, "alarm" if _alarm_left > 0.0 else "")
 
 
-## Docked: ←/→ = station choices, hold USE = work, ↑/↓ = leave.
+## Patching a hull breach: standing next to one with a toolbox and holding USE. Returns true while
+## patching (the crew member stands still and works instead of walking).
+func _process_hull() -> bool:
+	var hull := HullDamage.current
+	var breach: Dictionary = hull.breach_near(global_position) if hull else {}
+	if breach.is_empty() or not has_toolbox or not Input.is_action_pressed(_act("interact")):
+		if _patch_id != -1:
+			_patch_id = -1
+			_patch = 0.0
+			if hull:
+				hull.patch_id = -1
+				hull.patch_progress = 0.0
+		return false
+	if int(breach.id) != _patch_id:
+		_patch_id = int(breach.id)
+		_patch = 0.0
+	var dt := get_physics_process_delta_time()
+	var before := _patch
+	_patch += dt / HullDamage.PATCH_TIME
+	if int(before * 6.0) != int(_patch * 6.0):
+		Sfx.play("work_tick", 1.3)
+	velocity = Vector2.ZERO
+	running = false
+	_facing = Vector2(breach.x, breach.y) - global_position
+	var above: bool = breach.y < global_position.y - 2
+	_animate(false, "work_up" if above else "work_down")
+	if _patch >= 1.0:
+		Events.action_requested.emit("team", {type = "patch", id = _patch_id})
+		Sfx.play("fixed")
+		_patch_id = -1
+		_patch = 0.0
+	hull.patch_id = _patch_id
+	hull.patch_progress = _patch
+	return true
+
+
+## Docked: ←/→ = station choices, hold USE = work, Q (or ↑/↓) = leave.
 func _process_docked() -> void:
 	velocity = Vector2.ZERO
 	running = false
-	if Input.is_action_just_pressed(_act("up")) or Input.is_action_just_pressed(_act("down")):
+	if Input.is_action_just_pressed(_act("leave")) or Input.is_action_just_pressed(_act("up")) \
+			or Input.is_action_just_pressed(_act("down")):
 		_undock()
 		Sfx.play("undock")
 		_process_walking()
@@ -171,10 +255,10 @@ func role_color() -> Color:
 # --- network ---------------------------------------------------------------------------
 
 ## What other peers need to draw this crew member:
-## [pos, facing, moving, special, docked, skin, running].
+## [pos, facing, moving, special, docked, skin, running, toolbox].
 func snapshot() -> Array:
 	return [position, _facing, _anim_moving, _anim_special,
-			_docked.role if _docked else "", skin, running]
+			_docked.role if _docked else "", skin, running, has_toolbox]
 
 
 func apply_snapshot(data: Array) -> void:
@@ -185,6 +269,9 @@ func apply_snapshot(data: Array) -> void:
 	_anim_moving = data[2]
 	_anim_special = data[3]
 	running = data.size() > 6 and data[6]
+	var tool: bool = data.size() > 7 and data[7]
+	if tool != has_toolbox:
+		has_toolbox = tool
 	if data[5] != skin:
 		skin = data[5]
 	var docked_role: String = data[4]
@@ -247,6 +334,8 @@ func _exit_tree() -> void:
 
 
 func _draw() -> void:
+	if _tool:
+		_tool.queue_redraw()  # follows facing
 	var c := role_color()
 	if _tag:
 		_tag.queue_redraw()

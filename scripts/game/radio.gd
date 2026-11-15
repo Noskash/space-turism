@@ -49,7 +49,7 @@ func setup(label: Label) -> Radio:
 
 
 func _ready() -> void:
-	process_mode = Node.PROCESS_MODE_ALWAYS  # keeps playing (quieter) in the pause menu
+	process_mode = Node.PROCESS_MODE_ALWAYS  # watches the pause itself: freezes with the game
 	apply_volume()
 	_player = AudioStreamPlayer.new()
 	_player.bus = BUS
@@ -64,7 +64,8 @@ func _exit_tree() -> void:
 
 func _process(delta: float) -> void:
 	_show = maxf(_show - delta, 0.0)
-	_player.volume_db = lerpf(_player.volume_db, -14.0 if get_tree().paused or _static else 0.0, minf(delta * 4.0, 1.0))
+	_player.stream_paused = get_tree().paused
+	_player.volume_db = lerpf(_player.volume_db, -14.0 if _static else 0.0, minf(delta * 4.0, 1.0))
 	_update_label()
 
 

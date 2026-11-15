@@ -94,14 +94,14 @@ theme_override_constants/separation = 16
 [node name="CodeLabel" type="Label" parent="Margin/VBox/Center/Panel/Form"]
 layout_mode = 2
 theme_type_variation = &"RoleLabel"
-text = "АДРЕС КОМНАТЫ"
+text = "КОД КОМНАТЫ ИЛИ АДРЕС"
 
 [node name="AddressInput" type="LineEdit" parent="Margin/VBox/Center/Panel/Form"]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(0, 64)
 layout_mode = 2
 theme_override_font_sizes/font_size = 26
-placeholder_text = "Например, 192.168.1.5"
+placeholder_text = "Например, KRMX или 192.168.1.5"
 alignment = 1
 max_length = 24
 

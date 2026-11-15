@@ -5,8 +5,9 @@ extends RefCounted
 ##   2. It holds ~1 s (players keep control), then folds up into...
 ##   3. ...the alert strip under the mission progress block, which keeps the full instruction and
 ##      a countdown, blinking, for as long as the hazard lasts.
-## Built from sim state only (cme / blackout / dust), so every co-op peer sees the same alerts.
-## show_slab() is the generic entry point for future alerts (MOI, breach...).
+## Built from sim state only (MOI, oxygen / breaches, meteoroid, cme, blackout, dust, conjunction),
+## so every co-op peer sees the same alerts.
+## show_slab() is the generic entry point for any other alert.
 
 const SLIDE := 0.18
 const HOLD := 1.0
@@ -24,6 +25,11 @@ const SLABS := {
 	"blackout": {icon = "blackout", words = "BLACKOUT", color = Color("ff5050")},
 	"dust_warning": {icon = "debris_big", words = "COMET DEBRIS", color = Color("e8c890")},
 	"dust_stream": {icon = "fly", words = "PILOT NEEDED", color = Color("ff8a5c")},
+	"moi": {icon = "mars", words = "MARS ARRIVAL", color = Color("ff8a4c")},
+	"oxygen": {icon = "alert", words = "OXYGEN LOW", color = Color("ff5050")},
+	"meteor": {icon = "debris_big", words = "METEOROID!", color = Color("ff5050")},
+	"breach": {icon = "wrench", words = "HULL BREACH", color = Color("ffb04a")},
+	"conj_warning": {icon = "dsn", words = "SOLAR CONJUNCTION", color = Color("ffe14a")},
 }
 
 var _key := ""
@@ -40,20 +46,43 @@ func update(state: Dictionary) -> void:
 	var cme: Dictionary = state.get("cme", {})
 	var dust: Dictionary = state.get("dust", {})
 	var blackout: float = state.get("blackout", 0.0)
+	var meteor_left := float(state.get("meteor", {}).get("time_left", -1.0))
+	var breaches: int = state.get("breaches", []).size()
+	var o2 := float(state.get("oxygen", 100.0))
+	var conj: Dictionary = state.get("conjunction", {})
+	var moi: Dictionary = state.get("moi", {})
 	var key := ""
 	_text = ""
 	var shields: bool = cme.get("shields", false)
 	var safe: bool = cme.get("safe", false)
 	var protected := shields or safe
 	var suffix := "_shields" if shields else ("_safe" if safe else "")
-	if cme.get("phase", "") == "warning" and protected:
-		_text = ("SHIELDS UP" if shields else "SAFE MODE") + " - RADIATION STORM IN %ds"
+	if state.get("lost", "") != "" or not state.get("finished", {}).is_empty():
+		pass  # the game-over panel / mission report says it
+	elif moi.get("phase", "") == "window":
+		_text = "MARS ARRIVAL - NAVIGATOR: HOLD THE BRAKE AT THE BRIDGE! (%ds)"
+		_left = _ticket_left(state, "moi")
+		_color = Color("ff8a4c")
+		_icon = "mars"
+		key = "moi"
+	elif breaches > 0 and o2 < 40.0:
+		_text = "OXYGEN %d%% - PATCH THE HULL BREACH%s NOW!" % [int(o2), "ES" if breaches > 1 else ""]
+		_color = Color("ff5050")
+		_icon = "alert"
+		key = "oxygen"
+	elif meteor_left > 0.0 and meteor_left < 2.6:
+		_text = "METEOROID INCOMING - NO POWER TO DODGE!"
+		_color = Color("ff5050")
+		_icon = "debris"
+		key = "meteor"
+	elif cme.get("phase", "") == "warning" and protected:
+		_text = "SHIELDS UP - RADIATION STORM IN %ds" if shields else "SAFE MODE - STORM IN %ds - EVERYONE TO CARGO!"
 		_left = cme.time_left
 		_color = Color("8cd8ff")
 		_icon = "shield" if shields else "safe"
 		key = "cme_warning" + suffix
 	elif cme.get("phase", "") == "warning":
-		var todo := "RAISE THE SHIELDS (MISSION HUB)" if cme.get("shielding", false) else "ENGINEER: SAFE MODE (ENGINE ROOM)"
+		var todo := "RAISE THE SHIELDS (MISSION HUB)" if cme.get("shielding", false) else "SAFE MODE (ENGINE ROOM), THEN ALL TO CARGO"
 		_text = "RADIATION STORM IN %ds - " + todo
 		_left = cme.time_left
 		_color = Color("ffe14a")
@@ -76,7 +105,7 @@ func update(state: Dictionary) -> void:
 		_icon = "blackout"
 		key = "blackout"
 	elif dust.get("phase", "") == "warning":
-		_text = "COMET DEBRIS IN %ds - NAVIGATOR TO THE BRIDGE"
+		_text = "DEBRIS IN %ds - NAVIGATOR: STEER AROUND IT AT THE BRIDGE"
 		_left = dust.time_left
 		_color = Color("e8c890")
 		_icon = "debris"
@@ -92,6 +121,23 @@ func update(state: Dictionary) -> void:
 		_color = Color("e8c890")
 		_icon = "fly"
 		key = "dust_flying"
+	elif breaches > 0:
+		_text = "HULL BREACH%s - GRAB A TOOLBOX, HOLD SPACE ON THE HOLE" % ("ES" if breaches > 1 else "")
+		_color = Color("ffb04a")
+		_icon = "wrench"
+		key = "breach"
+	elif conj.get("phase", "") == "warning":
+		_text = "SOLAR CONJUNCTION IN %ds - COMMS: EMPTY THE RECORDER NOW"
+		_left = conj.time_left
+		_color = Color("ffe14a")
+		_icon = "dsn"
+		key = "conj_warning"
+	elif conj.get("phase", "") == "active":
+		_text = "SOLAR CONJUNCTION - NO RADIO CONTACT (%ds)"
+		_left = conj.time_left
+		_color = Color("ffb04a")
+		_icon = "lost"
+		key = "conj_active"
 	if key != _key:
 		_key = key
 		if SLABS.has(key):
@@ -204,3 +250,10 @@ func draw_slab(ci: CanvasItem) -> void:
 	UiKit.icon(ci, _slab.icon, badge.position + Vector2(1, 1), 2, color)
 	UiKit.text(ci, Vector2(x + 42, r.position.y + 20 + roundf(UiKit.ascent(size) / 2.0)), words, size,
 			UiKit.ink_on(color), 0)
+
+
+func _ticket_left(state: Dictionary, kind: String) -> float:
+	for e: Dictionary in state.get("events", []):
+		if e.get("kind", "") == kind:
+			return float(e.time_left)
+	return 0.0
