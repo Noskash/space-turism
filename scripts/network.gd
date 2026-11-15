@@ -65,7 +65,6 @@ var room_code := ""
 ## Relay address (RELAY_URL or --relay=...).
 var relay_url := RELAY_URL
 
-var _next_player_number := 1
 var _connect_timer: Timer
 
 
@@ -119,8 +118,8 @@ func create_room(level_data: LevelData, number: int, port := DEFAULT_PORT) -> Er
 	state = State.HOSTING
 	level = level_data
 	level_number = number
-	_next_player_number = 1
-	players = {1: _take_player_name()}
+	players = {1: ""}
+	_renumber()
 	room_changed.emit()
 	return OK
 
@@ -232,10 +231,38 @@ static func parse_address(text: String) -> Array:
 	return [address, port]
 
 
-func _take_player_name() -> String:
-	var player_name := "Player %d" % _next_player_number
-	_next_player_number += 1
-	return player_name
+## Host: names follow join order ("Player 1" = host), with no gaps - when Player 2 leaves, Player 3 becomes 2.
+func _renumber() -> void:
+	var ids := players.keys()
+	ids.sort()
+	for i in ids.size():
+		players[ids[i]] = "Player %d" % (i + 1)
+
+
+## Fingerprint of every networked script's RPC list. Godot matches RPCs by their place in that list, so two builds
+## with different fingerprints can't play together ("rpc node checksum failed"); a client checks it on joining.
+## Add new scripts with @rpc here.
+const RPC_SCRIPTS := [
+	"res://scripts/network.gd", "res://scripts/design/hangar.gd", "res://scripts/design/designer.gd",
+	"res://scripts/launch/planner.gd", "res://scripts/launch/launch.gd", "res://scripts/game/net_sync.gd",
+	"res://scripts/game/mission_report.gd", "res://scripts/ui/pause_menu.gd",
+]
+const VERSION_MISMATCH := "Your game is a different version from the host's. Reload the page (or use the same build as the host) and join again."
+var _version := ""
+
+
+func build_version() -> String:
+	if _version == "":
+		var parts := PackedStringArray()
+		for path: String in RPC_SCRIPTS:
+			var s := load(path) as Script
+			var cfg: Dictionary = s.get_rpc_config() if s else {}
+			var names := cfg.keys()
+			names.sort()
+			for n in names:
+				parts.append("%s:%s:%s" % [path.get_file(), n, str(cfg[n])])
+		_version = "|".join(parts).md5_text().substr(0, 8)
+	return _version
 
 
 # --- Network events ---
@@ -243,9 +270,11 @@ func _take_player_name() -> String:
 func _on_peer_connected(id: int) -> void:
 	if not is_host():
 		return
-	players[id] = _take_player_name()
+	players[id] = ""
+	_renumber()
 	var room_info := level.to_dict()
 	room_info["number"] = level_number
+	room_info["version"] = build_version()
 	_receive_room.rpc_id(id, room_info)
 	_receive_players.rpc(players)
 	room_changed.emit()
@@ -255,6 +284,7 @@ func _on_peer_disconnected(id: int) -> void:
 	if not is_host() or not players.has(id):
 		return
 	players.erase(id)
+	_renumber()
 	_receive_players.rpc(players)
 	room_changed.emit()
 
@@ -305,6 +335,11 @@ func _on_server_disconnected() -> void:
 
 @rpc("authority", "call_remote", "reliable")
 func _receive_room(room_info: Dictionary) -> void:
+	if state == State.CONNECTING and str(room_info.get("version", "")) != build_version():
+		push_warning("Network: host version %s, mine %s" % [room_info.get("version", "?"), build_version()])
+		leave_room()
+		join_failed.emit(VERSION_MISMATCH)
+		return
 	level = LevelData.from_dict(room_info)
 	level_number = int(room_info.get("number", 1))
 	if state == State.CONNECTING:

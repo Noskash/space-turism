@@ -36,6 +36,7 @@ func _ready() -> void:
 		Events.event_started.connect(_on_host_event_started)
 		Events.event_ended.connect(_on_host_event_ended)
 		multiplayer.peer_disconnected.connect(func(id: int) -> void: _ready_peers.erase(id))
+		_host_hello.rpc()
 	else:
 		Events.action_requested.connect(_on_client_action)
 		_client_ready.rpc_id(1)
@@ -81,6 +82,14 @@ func _on_host_event_ended(id_text: String) -> void:
 func _client_ready() -> void:
 	if is_inside_tree() and Network.is_host():
 		_ready_peers[multiplayer.get_remote_sender_id()] = true
+
+
+## The host's game scene just loaded: a client that got here first lost its _client_ready (sent while the
+## host was still switching scenes), so it says it again.
+@rpc("authority", "call_remote", "reliable")
+func _host_hello() -> void:
+	if is_inside_tree() and not Network.is_host():
+		_client_ready.rpc_id(1)
 
 
 @rpc("any_peer", "call_remote", "reliable")

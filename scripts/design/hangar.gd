@@ -104,6 +104,8 @@ func _ready() -> void:
 		multiplayer.peer_disconnected.connect(func(id: int) -> void: _ready_peers.erase(id))
 		if not Network.is_host():
 			_client_ready.rpc_id(1)
+		else:
+			_host_hello.rpc()
 	_apply_state({design = design, plan = plan, ready_by = {}, carried = {}})
 	PauseMenu.attach(self, "LEAVE TO MAIN MENU", "WASD WALK · SPACE USE · F INFO · J CODEX · H HELP")
 	var id := Missions.current_id()
@@ -687,6 +689,14 @@ func _client_ready() -> void:
 		var id := multiplayer.get_remote_sender_id()
 		_ready_peers[id] = true
 		_recv_state.rpc_id(id, _state())
+
+
+## The host's hangar just loaded. A client that got here first sent _client_ready while the host was still
+## switching scenes (dropped: no node yet), so it would never get the host's crew or state; say it again.
+@rpc("authority", "call_remote", "reliable")
+func _host_hello() -> void:
+	if is_inside_tree() and not Network.is_host():
+		_client_ready.rpc_id(1)
 
 
 @rpc("any_peer", "call_remote", "reliable")
