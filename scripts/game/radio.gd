@@ -84,6 +84,21 @@ func _play(index: int) -> void:
 		_player.play()
 
 
+## Outside the cruise (the assembly hangar has no sim): drive the radio directly.
+func tune(on: bool, track: int) -> void:
+	_on_state({radio = {on = on, track = track}})
+
+
+## Title of the track playing ("" = off).
+func now_playing() -> String:
+	return "" if _index < 0 else str(TRACKS[_index].title)
+
+
+## True for a few seconds after a track starts (show its title).
+func showing() -> bool:
+	return _show > 0.0
+
+
 func _on_state(state: Dictionary) -> void:
 	var radio: Dictionary = state.get("radio", {})
 	var on: bool = radio.get("on", false)

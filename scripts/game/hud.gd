@@ -4,7 +4,9 @@ extends CanvasLayer
 ##                 missions with the hull system)                                  ResourceBar
 ##   top-centre    mission progress Earth -> Mars with day + AU, DSN pass, science stored / sent /
 ##                 lost, mission goals (campaign); under it the alert strip, then sim toasts  AlertBanner
-##   top-right     task list, TAB folds it                                          TaskList
+##   top-right     task list                                                        TaskList
+##   TAB cycles the whole top: open -> task list folded -> top HUD hidden (a small TAB tab with the
+##   open task count stays in the corner; alerts and toasts still show) -> open
 ##   bottom-right  big action button with the key to press                         ActionButton
 ##   bottom-left   you (name + role colour), radio, controls hint for the first 30 s
 ##                 (the crew dose panel, CrewPanel, sits above it)
@@ -12,7 +14,7 @@ extends CanvasLayer
 ## Events.state_changed. Block rects go to UiKit.hud so stations and the event guide keep out.
 
 const HINT_TIME := 30.0
-const HINT_KEYS := [["WASD", "MOVE"], ["SHIFT", "RUN"], ["SPACE", "USE"], ["Q", "LEAVE"], ["TAB", "TASKS"],
+const HINT_KEYS := [["WASD", "MOVE"], ["SHIFT", "RUN"], ["SPACE", "USE"], ["Q", "LEAVE"], ["TAB", "HUD"],
 		["J", "CODEX"], ["K", "SKIN"], ["H", "HELP"], ["ESC", "MENU"]]
 const INFO_SIZE := 7
 
@@ -26,6 +28,7 @@ var local: CrewMember:       # set by Game
 var _canvas: Node2D
 var _bars: Array[ResourceBar] = []
 var _tasks := TaskList.new()
+var _top_hidden := false     # TAB, third press: resources, progress, goals and tasks out of the way
 var _button := ActionButton.new()
 var _alert := AlertBanner.new()
 var _juice := UiJuice.new()
@@ -90,6 +93,11 @@ func _on_state_changed(state: Dictionary) -> void:
 	_life = bool(Missions.sim().get("hull", true))
 	for bar in _bars:
 		bar.set_value(float(state.get(bar.key, 100.0 if bar.key in ["hull", "oxygen"] else 0.0)))
+	# Fuel tank temperature (frozen propellant): shown once it gets cold.
+	var tank := float(state.get("tank_temp", 20.0))
+	_bars[1].badge = "FROZEN %dC" % roundi(tank) if state.get("fuel_frozen", false) \
+			else ("COLD %dC" % roundi(tank) if tank < 10.0 else "")
+	_bars[1].badge_col = Color("bfefff") if state.get("fuel_frozen", false) else Color("8cd8ff")
 	var done_before := _goals_done()
 	_goals = Missions.goals(state)
 	_tasks.update(state)
@@ -135,8 +143,21 @@ func _process(delta: float) -> void:
 	_button.step(delta)
 	_toast_left = maxf(_toast_left - delta, 0.0)
 	if not Tutorial.is_blocking() and Input.is_action_just_pressed(Controls.action("p1", "tasks")):
-		_tasks.toggle()
+		_cycle_top()
 	_canvas.queue_redraw()
+
+
+## TAB: open -> task list folded -> whole top hidden -> open.
+func _cycle_top() -> void:
+	if _top_hidden:
+		_top_hidden = false
+		_tasks.collapsed = false
+		Sfx.play("select")
+	elif _tasks.collapsed:
+		_top_hidden = true
+		Sfx.play("select")
+	else:
+		_tasks.toggle()
 
 
 # --- drawing ---------------------------------------------------------------------------------
@@ -144,6 +165,22 @@ func _process(delta: float) -> void:
 func _draw_hud() -> void:
 	var c := _canvas
 	var rects := {}
+	if _top_hidden:
+		_goals_rect = Rect2()
+		rects.tasks = _draw_top_tab(c)
+		var strip_top := _alert.draw_strip(c, Vector2(240, 2), 200, 8, rects.tasks.position.x - 4)
+		var ty := 2.0
+		if strip_top.has_area():
+			rects.alert = strip_top
+			ty = strip_top.end.y + 2
+		if UiKit.overlays.has("guide"):
+			ty = maxf(ty, UiKit.overlays.guide.end.y + 2)
+		_draw_toast(c, Vector2(240, ty))
+		rects.you = _draw_you(c)
+		rects.action = _button.draw(c, Vector2(478, 268))
+		_alert.draw_slab(c)
+		UiKit.hud = rects
+		return
 	rects.resources = _draw_resources(c)
 	rects.tasks = _tasks.draw(c, Vector2(478, 2))
 	_goals_rect = Rect2()
@@ -165,6 +202,24 @@ func _draw_hud() -> void:
 	rects.action = _button.draw(c, Vector2(478, 268))
 	_alert.draw_slab(c)
 	UiKit.hud = rects
+
+
+## Hidden top HUD: a small tab in the top-right corner (key cap + open tasks, one chip each).
+func _draw_top_tab(c: CanvasItem) -> Rect2:
+	var key := Controls.key_name("p1", "tasks")
+	var cap := UiKit.keycap_size(key, 6)
+	var n := _tasks.open_count()
+	var label := str(n) if n > 0 else "HUD"
+	var h := cap.y + 6
+	var w := cap.x + 6 + UiKit.text_w(label, 7) + 6
+	var r := Rect2(478 - w, 2, w, h)
+	UiKit.panel(c, r)
+	UiKit.keycap(c, r.position + Vector2(3, 3), key, 6)
+	var col := UiKit.WARN if n > 0 else UiKit.FAINT
+	if n > 0 and _tasks.has_urgent() and fmod(_time, 0.5) < 0.25:
+		col = Color.WHITE
+	UiKit.text(c, Vector2(r.position.x + cap.x + 6, r.end.y - 4), label, 7, col)
+	return r
 
 
 ## Rects before the first frame (the cruise tutorial points at them right away).

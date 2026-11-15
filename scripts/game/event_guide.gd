@@ -304,9 +304,9 @@ func _build(id: String) -> Dictionary:
 			return {
 				title = "HULL BREACH",
 				panes = [
-					{title = "Hull breach!", rect = Rect2(hole - Vector2(18, 16), Vector2(36, 30)),
+					{title = "Hull breach!", rect = UiKit.world_rect(Rect2(hole - Vector2(18, 16), Vector2(36, 30))),
 					 body = "A hit punched a hole in the hull and air is venting into space. Every open hole drains OXYGEN (top right). At 0% the crew is lost."},
-					{title = "Grab a toolbox", rect = Rect2(HullDamage.LOCKERS[0] - Vector2(16, 14), Vector2(32, 28)),
+					{title = "Grab a toolbox", rect = UiKit.world_rect(Rect2(HullDamage.LOCKERS[0] - Vector2(16, 14), Vector2(32, 28))),
 					 body = "Toolboxes hang in RED LOCKERS in the Cargo bay and the Engine Room. Walk up and press SPACE to take one (SPACE again puts it back)."},
 					{title = "Patch it", rect = UiKit.hud_rect("resources").grow(1),
 					 body = "Walk to the hole and HOLD SPACE until the ring fills. The weaker the HULL, the likelier the next hit punches another hole. Heavy class and the Whipple shield make it tougher."},
@@ -349,7 +349,7 @@ func _build(id: String) -> Dictionary:
 			return {
 				title = "STATION OFFLINE",
 				panes = [
-					{title = "Station offline", rect = ROOMS.get(role, Rect2()),
+					{title = "Station offline", rect = UiKit.world_rect(ROOMS.get(role, Rect2())),
 					 body = "The %s is broken (a missed ticket or damage). It's useless until someone repairs it. Repairs have no timer, but every second it's down hurts." % PLACE.get(role, role)},
 					{title = "Repair it",
 					 body = "Walk into its ring, SPACE to dock, then HOLD SPACE until the ring fills. The Radiator part makes repairs 40% faster."},
@@ -621,7 +621,8 @@ func _draw_guide() -> void:
 			var col := UiKit.GOOD if k < _reached else (Color.WHITE if fmod(_time, 0.6) < 0.4 else UiKit.DIM) if k == i else UiKit.FAINT
 			UiKit.chip(c, Rect2(box.end.x - 6 - (steps.size() - k) * 7 + 2, box.position.y + 4, 5, 5), col)
 		UiKit.text(c, Vector2(box.position.x + 6, box.end.y - 4), line, 8, UiKit.TEXT)
-		# Where to go: room outline + bouncing arrow over the station.
+		# Where to go: room outline + bouncing arrow over the station (map coordinates -> screen).
+		c.draw_set_transform(UiKit.world_offset)
 		var role: String = step.role
 		var st := _station(role) if role != "" else null
 		var point: Callable = step.get("point", Callable())
@@ -646,6 +647,7 @@ func _draw_guide() -> void:
 			c.draw_colored_polygon(outline, UiKit.INK)
 			c.draw_colored_polygon(arrow, UiKit.WARN)
 			_arrow_from_player(st.global_position)
+		c.draw_set_transform(Vector2.ZERO)
 	if _result_left > 0.0:
 		# Outcome stamp: slams in, sits, fades in its last second.
 		var age := RESULT_TIME - _result_left

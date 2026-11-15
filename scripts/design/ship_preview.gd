@@ -13,6 +13,16 @@ var design := {}:
 		queue_redraw()
 ## Upgrade to blink on the ship (the part under the local cursor), "" = none.
 var highlight := ""
+## Folded for launch (inside the rocket fairing): no solar wings, no magnetometer boom, no engine.
+var folded := false:
+	set(value):
+		folded = value
+		queue_redraw()
+## Body + base kit only (the rocket board draws the upgrade cells itself, bigger).
+var bare := false:
+	set(value):
+		bare = value
+		queue_redraw()
 
 var _time := 0.0
 
@@ -38,19 +48,22 @@ func _draw() -> void:
 	var ox := (SIZE.x - bw) / 2
 	var oy := (SIZE.y - bh) / 2 - 2
 
+	if bare:
+		_draw_bare(cls, body)
+		return
 	var wing := _mounted("solar_large" if "solar_large" in upgrades else "solar_small")
-	if wing:
+	if wing and not folded:
 		var wy := oy + bh / 2 - int(wing.get_height()) / 2
 		_draw_flipped(wing, Vector2(ox - wing.get_width(), wy))
 		draw_texture(wing, Vector2(ox + bw, wy))
-	if "magnetometer" in upgrades:
+	if "magnetometer" in upgrades and not folded:
 		draw_texture(_mounted("magnetometer"), Vector2(ox + bw - 3, oy + bh - 3))
 	draw_texture(body, Vector2(ox, oy))
 	var top := _mounted("antenna_high" if "antenna_high" in upgrades else "antenna_low")
 	if top:
 		draw_texture(top, Vector2(ox + bw / 2 - int(top.get_width()) / 2, oy - top.get_height() + 2))
 	var engine := _mounted("engine_main")
-	if engine:
+	if engine and not folded:       # folded: the engine sits in the rocket's adapter, below the opening
 		draw_texture(engine, Vector2(ox + bw / 2 - int(engine.get_width()) / 2, oy + bh - 1))
 	var thr := _mounted("thrusters_basic")
 	if thr:
@@ -65,8 +78,11 @@ func _draw() -> void:
 		else:
 			_draw_centered(_mounted(cell.use), Vector2(ox + cell.x, oy + cell.y))
 
-	for i in mini(upgrades.size(), slots.size()):
-		var id: String = upgrades[i]
+	var cells := DesignRules.cells_of(design)
+	for i in mini(cells.size(), slots.size()):
+		var id: String = cells[i]
+		if id == "":
+			continue
 		var p := DesignRules.part(id)
 		var at := Vector2(ox + slots[i].x, oy + slots[i].y)
 		var frames: Dictionary = DesignRules.data().frames.get(p.get("role", ""), {})
@@ -80,7 +96,24 @@ func _draw() -> void:
 			draw_rect(Rect2(at - Vector2.ONE, Vector2(CELL + 2, CELL + 2)), Color.WHITE, false, 1.0)
 
 
-## Top-left corners (local) of the class's upgrade cells, in the order upgrades fill them.
+func _draw_bare(cls: Dictionary, body: Texture2D) -> void:
+	var o := body_origin()
+	draw_texture(body, o)
+	for cell: Dictionary in cls.get("cells", []):
+		if cell.use != "upgrade_slot":
+			_draw_centered(_mounted(cell.use), o + Vector2(cell.x, cell.y))
+
+
+## Top-left corner (local) of the class body.
+func body_origin() -> Vector2:
+	var cls := DesignRules.class_info(design.get("ship_class", "balanced"))
+	var body := _tex(DesignRules.BASE_DIR + cls.get("body", ""))
+	if body == null:
+		return Vector2.ZERO
+	return Vector2((SIZE.x - int(body.get_width())) / 2, (SIZE.y - int(body.get_height())) / 2 - 2)
+
+
+## Top-left corners (local) of the class's upgrade cells (index = DesignRules.cells_of index).
 ## The hangar uses them to light free cells and to find the installed part next to a player.
 func upgrade_cells() -> Array[Vector2]:
 	var out: Array[Vector2] = []

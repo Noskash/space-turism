@@ -27,7 +27,10 @@ var _shown_ticket := -1  # ticket id the bubble last popped for
 var _state := {}
 var _ticket := {}        # oldest pending ticket for this role ({} = none)
 var _offline := false
+var _burning := false    # a fire in this station's room: "TOO HOT", the sim refuses its verbs
 var _dust := {}          # state.dust (Navigator flies through comet debris from the Bridge)
+## Room each station stands in (same table as fake_mission STATION_ROOMS).
+const ROOMS := {comms = "comms", scientist = "science", engineer = "engineering", navigator = "bridge", team = "hub"}
 var _game: Node = null   # minigame this station opened for the local player (DodgeGame / ShieldGame)
 
 # Hold-to-work.
@@ -134,6 +137,9 @@ func set_holding(on: bool) -> void:
 	if on == _holding:
 		return
 	_holding = on
+	if on and _burning:   # fire in the room: nothing works here until it is out
+		Sfx.play("denied")
+		return
 	if on and _ticket.get("kind", "") == "shields" and _game == null and not _offline:
 		_open_shield_game()
 		return
@@ -249,10 +255,14 @@ func _on_state_changed(state: Dictionary) -> void:
 	_state = state
 	_dust = state.get("dust", {})
 	_offline = role in state.get("offline", [])
+	_burning = false
+	for f: Dictionary in state.get("fires", []):
+		if f.get("room", "") == ROOMS.get(role, "-"):
+			_burning = true
 	_ticket = {}
 	for event: Dictionary in state.get("events", []):
-		if event.role != role or event.get("kind", "") == "dust":
-			continue  # the dust stream is dodged, not worked
+		if event.role != role or event.get("kind", "") in ["dust", "fire"]:
+			continue  # the dust stream is dodged, fires are put out with an extinguisher
 		# Repairs first: an offline station can do nothing else.
 		if _ticket.is_empty() or (event.repair and not _ticket.repair):
 			_ticket = event
@@ -270,7 +280,9 @@ func _load_names() -> Array:
 func action_info() -> Dictionary:
 	var info := {icon = "use", verb = "USE", enabled = true, hold = false, sides = false, progress = work_progress()}
 	var kind: String = _ticket.get("kind", "")
-	if kind == "shields":
+	if _burning:
+		info.merge({icon = "fire", verb = "TOO HOT", enabled = false}, true)
+	elif kind == "shields":
 		info.merge({icon = "shield", verb = "SHIELDS"}, true)
 	elif kind == "safe_mode":
 		info.merge({icon = "safe", verb = "SAFE MODE"}, true)
@@ -281,6 +293,8 @@ func action_info() -> Dictionary:
 			info.merge({icon = "burn", verb = "BRAKE", hold = true}, true)
 		elif kind == "power_up":
 			info.merge({icon = "power", verb = "POWER UP", hold = true}, true)
+		elif kind == "freeze":
+			info.merge({icon = "power", verb = "HEATER ON", hold = true}, true)
 		elif kind == "science_window":
 			info.merge({icon = "observe", verb = "OBSERVE", hold = true}, true)
 		else:
@@ -292,7 +306,10 @@ func action_info() -> Dictionary:
 	else:
 		match role:
 			"navigator":
-				info.merge({icon = "burn", verb = "BURN", sides = true}, true)
+				if _state.get("fuel_frozen", false):
+					info.merge({icon = "fuel", verb = "FROZEN", enabled = false}, true)
+				else:
+					info.merge({icon = "burn", verb = "BURN", sides = true}, true)
 			"engineer":
 				info.merge({icon = "switch", verb = "SWITCH"}, true)
 			"comms":
@@ -367,7 +384,10 @@ func _draw_bubble() -> void:
 ## Lines for the docked panel: what USE and LEFT/RIGHT do right now.
 func _panel_lines() -> Array[String]:
 	var lines: Array[String] = []
-	if _ticket.get("kind", "") == "shields":
+	if _burning:
+		lines.append("FIRE IN THIS ROOM - TOO HOT")
+		lines.append("GET AN EXTINGUISHER")
+	elif _ticket.get("kind", "") == "shields":
 		lines.append("RADIATION STORM IN %ds" % ceili(_ticket.time_left))
 		lines.append("SPACE: RAISE SHIELDS")
 	elif _ticket.get("kind", "") == "science_window" and not _state.get("loads", {}).get("instruments", false):
@@ -381,13 +401,19 @@ func _panel_lines() -> Array[String]:
 		lines.append("SPACE: SAFE MODE")
 	elif _ticket.get("kind", "") == "moi":
 		lines.append("MARS! BRAKE IN %ds" % ceili(_ticket.time_left))
-		if float(_state.get("power", 0)) < 10.0:
+		if _state.get("fuel_frozen", false):
+			lines.append("FUEL FROZEN - ENGINEER: HEATER!")
+		elif float(_state.get("power", 0)) < 10.0:
 			lines.append("BATTERY TOO LOW - ENGINEER!")
 		else:
 			lines.append("HOLD SPACE: BRAKE (FUEL %d%%)" % int(_state.get("fuel", 0)))
 	elif _ticket.get("kind", "") == "power_up":
 		lines.append("SYSTEMS OFF %ds" % ceili(_ticket.time_left))
 		lines.append("HOLD SPACE: POWER UP")
+	elif _ticket.get("kind", "") == "freeze":
+		var frozen: bool = _state.get("fuel_frozen", false)
+		lines.append(("FUEL FROZEN %dC" if frozen else "FUEL LINES %dC - COOLING") % roundi(float(_state.get("tank_temp", 0))))
+		lines.append("HOLD SPACE: HEATER ON")
 	elif not _ticket.is_empty():
 		lines.append(_ticket.title.to_upper())
 		lines.append("HOLD SPACE: " + ("REPAIR" if _ticket.repair else "FIX"))
@@ -459,7 +485,7 @@ func _draw_panel() -> void:
 	var screen_x := global_position.x + box.position.x
 	var shift := maxf(2.0 - screen_x, 0.0) - maxf(screen_x + box.size.x - 478.0, 0.0)
 	box.position.x += shift
-	if UiKit.hits_hud(Rect2(global_position + box.position, box.size)):
+	if UiKit.hits_hud(Rect2(global_position + box.position + UiKit.world_offset, box.size)):
 		box.position.y = 6
 	UiKit.panel(self, box, UiKit.PANEL, color())
 	for i in lines.size():

@@ -94,13 +94,25 @@ RACKS = [   # north racks stand against the wall (reach from below); south racks
     {"role": "scientist", "side": "south", "x": 10, "label": "SCIENTIST - SCI"},
     {"role": "navigator", "side": "south", "right": 466, "label": "NAVIGATOR - NAV"},
 ]
-BOARD = (160, 2, 160, 42)               # big wall board (hangs over the wall face)
+BOARD = (160, 0, 160, 35)               # wall board (hangs over the wall face; slim so the rocket's nose fits)
 BAY = (156, 48, 168, 104)               # assembly platform top surface (front face 3 px below)
 ANCHOR = (240, 100)                     # centre of the ship body on the bay
 PREVIEW_BOX = (160, 128)                # ShipPreview draws in a 160x128 box, body centre at (80, 62)
 PREVIEW_ORIGIN = (ANCHOR[0] - 80, ANCHOR[1] - 62)
 GANTRY_LEGS = (158, 318)                # left x of each gantry leg post (4 px wide, on the bay corners)
 GANTRY_FOOT_Y = 84                      # where the legs stand (beam drawn overhead at y 45..50)
+SILO_C = (240, 141)                     # launch silo: elliptical hole in the bay deck (Factorio-style)
+SILO_R = (54, 9)                        # its radii; the rocket rises out of it
+ROCKET_BOTTOM = SILO_C[1] + 6           # rocket sprite base (below the rim: hidden by the silo front layer)
+ROCKET_CX = 240
+ROCKET_TYPES = {   # launcher id -> look (DesignRules.CLASS_ROCKET: light / balanced / heavy ship)
+    "light": {"name": "ELECTRON", "cls": "light", "nose": 22,
+              "body": (30, 30, 40), "lit": (62, 62, 78), "dark": (18, 18, 26), "band": "white"},
+    "medium": {"name": "ZENIT", "cls": "balanced", "nose": 22,
+               "body": (206, 210, 222), "lit": (238, 240, 250), "dark": (138, 144, 166), "band": "metalD"},
+    "heavy": {"name": "PROTON", "cls": "heavy", "nose": 16,
+              "body": (214, 218, 228), "lit": (240, 242, 250), "dark": (146, 152, 172), "band": "cyanD"},
+}
 BENCHES = [(92, 92, 48, 12), (340, 92, 48, 12)]   # workbench tops (drop zones), 4 px face below
 STANDS_TOP = 172                        # class stands row (bodies on plinths)
 STAND_GAP = 10
@@ -524,7 +536,7 @@ for i in range(bx - 4, bx + bw + 4):                                # bay keep-o
 for j in range(by, by + bh + 7):
     if (j // 4) % 2 == 0:
         px(bx - 4, j, "yellowD"); px(bx + bw + 3, j, "yellowD")
-text_c(240, 161, "ASSEMBLY BAY 1", "yellowD")
+text_c(240, 163, "ASSEMBLY BAY 1", "yellowD")
 for k in range(3):                                                  # launch lane: chevrons to the door
     cx, cy = LAUNCH_ZONE[0] + LAUNCH_ZONE[2] // 2, 70 - k * 9
     for d in range(4):
@@ -659,13 +671,13 @@ for j in range(sy0, sy1, 2):                                        # faint scan
     for i in range(sx0, sx1):
         if BAYER[j % 4][i % 4] < 2:
             px(i, j, "scrL")
-text(gx + 6, gy + 5, "SPACECRAFT BUILD", "cyan")
-text(gx + 90, gy + 5, "CLASS", "cyanD")
-BOARD_FIELDS["class"] = {"x": gx + 112, "y": gy + 3, "w": 44, "h": 8}
-rect(sx0 + 1, gy + 11, sx1 - sx0 - 2, 1, "cyanD")
+text(gx + 6, gy + 2, "SPACECRAFT BUILD", "cyan")
+text(gx + 90, gy + 2, "CLASS", "cyanD")
+BOARD_FIELDS["class"] = {"x": gx + 112, "y": gy + 0, "w": 44, "h": 8}
+rect(sx0 + 1, gy + 8, sx1 - sx0 - 2, 1, "cyanD")
 rows = [("mass", "MASS", "cyan"), ("power", "POWER", "green"), ("budget", "BUDGET", "yellow"), ("slots", "SLOTS", "purple")]
 for k, (fid, label, c) in enumerate(rows):
-    ry = gy + 14 + k * 6
+    ry = gy + 10 + k * 6
     text(gx + 6, ry, label, mix(col(c), col("white"), 0.2))
     frame(gx + 32, ry, 62, 5, "metalD")
     rect(gx + 33, ry + 1, 60, 3, "scrL")
@@ -673,14 +685,14 @@ for k, (fid, label, c) in enumerate(rows):
         px(i, ry + 1, "metalD"); px(i, ry + 3, "metalD")          # quarter ticks
     BOARD_FIELDS[fid] = {"bar": {"x": gx + 33, "y": ry + 1, "w": 60, "h": 3},
                          "value": {"x": gx + 96, "y": ry - 1, "w": 30, "h": 7}}
-rkx, rky, rkw, rkh = gx + 128, gy + 13, 27, 26
+rkx, rky, rkw, rkh = gx + 128, gy + 9, 27, 25
 frame(rkx, rky, rkw, rkh, "cyanD")
 text_c(rkx + rkw // 2, rky + 2, "ROCKET", "cyanD")
 rcx = rkx + rkw // 2                                                # tiny rocket pictogram
-rect(rcx - 1, rky + 9, 3, 8, "metalL"); px(rcx, rky + 8, "metalL"); px(rcx, rky + 7, "white")
-px(rcx - 2, rky + 15, "metal"); px(rcx + 2, rky + 15, "metal"); px(rcx - 2, rky + 16, "metal"); px(rcx + 2, rky + 16, "metal")
-px(rcx, rky + 17, "orange")
-BOARD_FIELDS["rocket"] = {"x": rkx + 1, "y": rky + 18, "w": rkw - 2, "h": 7}
+rect(rcx - 1, rky + 9, 3, 6, "metalL"); px(rcx, rky + 8, "metalL"); px(rcx, rky + 7, "white")
+px(rcx - 2, rky + 13, "metal"); px(rcx + 2, rky + 13, "metal"); px(rcx - 2, rky + 14, "metal"); px(rcx + 2, rky + 14, "metal")
+px(rcx, rky + 15, "orange")
+BOARD_FIELDS["rocket"] = {"x": rkx + 1, "y": rky + 16, "w": rkw - 2, "h": 7}
 obstacle(152, FY0, 172, BOARD[1] + BOARD[3] - FY0 + 2, "board")
 LAYOUT["board"] = {"x": gx, "y": gy, "w": gw, "h": gh, "fields": BOARD_FIELDS}
 
@@ -726,24 +738,48 @@ for rx_ in (bx + 20, bx + bw - 36):                                 # ramps up o
     for i in range(rx_ + 1, rx_ + 15, 2):
         rect(i, by + bh - 2, 1, 4, "metalL")
 ax, ay = ANCHOR
-CRADLE = (ax - 37, ay - 37, 74, 74)
-cx_, cy_, cw_, ch_ = CRADLE
-rect(cx_, cy_, cw_, ch_, "hull")
-frame(cx_, cy_, cw_, ch_, "metalD")
-rect(cx_ + 1, cy_ + 1, cw_ - 2, 1, "hullL")
-for j in range(cy_ + 2, cy_ + ch_ - 1):
-    for i in range(cx_ + 2, cx_ + cw_ - 1):
-        if (i - cx_) % 12 == 7 or (j - cy_) % 12 == 7:
-            px(i, j, "hullD")                                        # 12 px build grid
-for half, c in ((20, "cyanD"), (26, "cyanD"), (32, "cyan")):        # size guides: light / balanced / heavy
-    for sx_, sy_ in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
-        x_, y_ = ax + sx_ * half - (1 if sx_ > 0 else 0), ay + sy_ * half - (1 if sy_ > 0 else 0)
-        rect(min(x_, x_ - sx_ * 3), y_, 4, 1, c)
-        rect(x_, min(y_, y_ - sy_ * 3), 1, 4, c)
-for sx_, sy_ in ((-1, -1), (1, -1), (-1, 1), (1, 1)):               # clamps
-    x_, y_ = ax + sx_ * 35, ay + sy_ * 35
-    rect(x_ - 2, y_ - 2, 4, 4, "yellowD"); rect(x_ - 1, y_ - 1, 2, 2, "yellow")
-text(cx_ + 3, cy_ + ch_ - 7, "L B H", "cyanD")
+scx, scy = SILO_C
+srx, sry = SILO_R
+
+
+def in_ell(i, j, rx, ry):
+    return ((i - scx) / rx) ** 2 + ((j - scy) / ry) ** 2
+
+
+for side in (-1, 1):                                                # feed pipes from the silo to the deck edges
+    x_a, x_b = (bx + 6, scx - srx - 4) if side < 0 else (scx + srx + 4, bx + bw - 6)
+    for py_, pc in ((scy - 4, "metal"), (scy + 1, "metalD")):
+        rect(x_a, py_, x_b - x_a, 3, pc); rect(x_a, py_, x_b - x_a, 1, "metalL")
+        for fx_ in range(x_a + 3, x_b - 2, 9):
+            rect(fx_, py_ - 1, 2, 5, "metalD")                       # flanges
+    lx_ = x_a + 2 if side < 0 else x_b - 4
+    rect(lx_, scy - 9, 3, 3, "redD"); px(lx_ + 1, scy - 8, "red")    # warning lamps
+for j in range(scy - sry - 4, scy + sry + 5):                       # hazard ring on the deck round the hole
+    for i in range(scx - srx - 6, scx + srx + 7):
+        d = in_ell(i, j, srx + 5, sry + 4)
+        if 0.8 <= d < 1.0:
+            px(i, j, "yellow" if ((i + j) // 3) % 2 == 0 else "hazD")
+for j in range(scy - sry, scy + sry + 1):                           # the hole
+    for i in range(scx - srx, scx + srx + 1):
+        d = in_ell(i, j, srx, sry)
+        if d >= 1.0:
+            continue
+        back = (j - (scy - sry)) / (2 * sry)                        # 0 = far (north) rim
+        if d >= 0.8:
+            c = "metalL" if j < scy else "metalD"                   # rim ring
+        elif back < 0.45:
+            c = mix(col("face"), col("void"), back * 1.6)           # far inner wall, lit from above
+            if (i - scx) % 7 == 0:
+                c = mix(c, col("void"), 0.4)                        # wall ribs
+        else:
+            c = "void"
+        px(i, j, c)
+glow(scx, scy + 2, srx - 8, "orange", 0.35, sry - 2)                # engine-bay glow deep in the silo
+glow(scx, scy + 3, srx // 2, "red", 0.3, sry // 2)
+for sx_ in (-1, 1):                                                 # hold-down clamps on the rim
+    x_ = scx + sx_ * (srx - 2) - (3 if sx_ > 0 else 0)
+    rect(x_, scy - 3, 4, 6, "yellowD"); rect(x_ + 1, scy - 2, 2, 4, "yellow")
+obstacle(scx - srx, scy - sry, 2 * srx + 1, 2 * sry + 1, "silo")
 gfy = GANTRY_FOOT_Y                                                 # gantry crane: legs here, beam in the overlay
 shade(bx, gfy - 1, bw, 3, 0.25)                                     # beam shadow across the bay
 for lgx in GANTRY_LEGS:
@@ -753,12 +789,7 @@ for lgx in GANTRY_LEGS:
     for j in range(54, gfy - 2, 8):
         rect(lgx, j, 4, 1, "hazD")
     obstacle(lgx - 2, gfy - 2, 8, 6, "gantry-leg")
-LAYOUT["assembly"] = {
-    "x": bx, "y": by, "w": bw, "h": bh,
-    "body_anchor": {"x": ax, "y": ay},
-    "preview_origin": {"x": PREVIEW_ORIGIN[0], "y": PREVIEW_ORIGIN[1]},
-    "cradle": {"x": cx_, "y": cy_, "w": cw_, "h": ch_},
-}
+LAYOUT["assembly"] = {"x": bx, "y": by, "w": bw, "h": bh}
 
 # ---------- workbenches ----------
 BENCH_LIST = []
@@ -834,6 +865,16 @@ for y in range(H):
 
 MAP_IMG = MAP.img.copy()
 
+# Silo front: the deck in front of the hole's front arc, cut from the finished map. The game draws it over
+# the rocket, so the rocket's base sinks into the floor.
+SILO_FRONT = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+_mp, _fp = MAP_IMG.load(), SILO_FRONT.load()
+for _i in range(SILO_C[0] - SILO_R[0] - 1, SILO_C[0] + SILO_R[0] + 2):
+    _k = 1 - ((_i - SILO_C[0]) / SILO_R[0]) ** 2
+    _arc = SILO_C[1] + SILO_R[1] * math.sqrt(max(_k, 0.0))
+    for _j in range(int(_arc) - 1, SILO_C[1] + SILO_R[1] + 3):
+        _fp[_i, _j] = tuple(_mp[_i, _j][:3]) + (255,)
+
 # ================================================================================
 #                 OVERLAY (above the crew): the gantry crane beam
 # ================================================================================
@@ -845,7 +886,7 @@ rect(gl + 1, 45, gr - gl - 2, 1, (255, 236, 150))
 rect(gl + 1, 49, gr - gl - 2, 1, "yellowD")
 for i in range(gl + 4, gr - 4, 10):
     px(i, 47, "yellowD"); px(i + 1, 47, "yellowD")                 # bolt line
-trx = 278                                                           # trolley + hook
+trx = 304                                                           # trolley + hook (clear of the rocket)
 rect(trx - 6, 43, 13, 9, "wallTop"); rect(trx - 5, 44, 11, 7, "metal")
 rect(trx - 5, 44, 11, 1, "metalL"); rect(trx - 3, 46, 7, 3, "metalD")
 rect(trx, 52, 1, 11, "metalL")
@@ -856,9 +897,117 @@ LAYOUT["overlay"] = {"note": "draw above the crew (gantry beam overhead)", "z": 
 
 
 # ================================================================================
+#     ROCKETS on the bay: upper stage standing up, fairing door open, ship inside
+# ================================================================================
+# One sprite per launcher (the class plate picks class + rocket). The opening fits the class's
+# folded ship exactly as ShipPreview draws it with `folded` (dish on top, body, engine below).
+# Front view, lit from the upper left like the map; 1 px ink outline.
+INK = (9, 8, 22)
+
+
+def make_rocket(tid):
+    look = ROCKET_TYPES[tid]
+    bw_, bh_ = CLASSES[look["cls"]]["body_size"]
+    open_w, open_h = bw_ + 8, 18 + bh_ + 2              # dish (20 px, 2 overlap) + body + air (engine in the adapter)
+    cyl_w = open_w + 8
+    door = 9                                            # open door panel sticks out on the left
+    nose, wall, stub = look["nose"], 2, 5
+    w, h = door + cyl_w + 2, nose + wall + open_h + wall + stub + 1
+    cv = use(Canvas(Image.new("RGBA", (w, h), (0, 0, 0, 0))))
+    x0 = door + 1                                       # cylinder left edge
+    body, lit, dark = look["body"], look["lit"], look["dark"]
+
+    def tone(x):                                        # vertical light bands across the cylinder
+        t = (x - x0) / max(cyl_w - 1, 1)
+        if t < 0.1:
+            return mix(body, dark, 0.25)
+        if t < 0.38:
+            return lit
+        if t < 0.7:
+            return body
+        if t < 0.88:
+            return mix(body, dark, 0.55)
+        return dark
+
+    for r in range(nose):                               # ogive nose cone
+        k = (r + 1) / nose
+        hw = (cyl_w / 2) * (1 - (1 - k) ** 2.2) ** 0.5 * k ** 0.35   # ogive with a pointed tip
+        a, b = round(x0 + cyl_w / 2 - hw), round(x0 + cyl_w / 2 + hw)
+        for x in range(max(a, x0), min(b, x0 + cyl_w)):
+            px(x, r, tone(x))
+    y_open = nose + wall
+    for y in range(nose, h - stub - 1):                 # fairing cylinder
+        for x in range(x0, x0 + cyl_w):
+            px(x, y, tone(x))
+    for y in range(h - stub - 1, h - 1):                # interstage band (into the launch mount)
+        for x in range(x0, x0 + cyl_w):
+            px(x, y, mix(col(look["band"]), tone(x), 0.35))
+    rect(x0, nose, cyl_w, 1, mix(body, dark, 0.4))      # fairing joint under the nose
+    ox_, oy_ = x0 + 4, y_open                           # the opening (ship goes in here at runtime)
+    rect(ox_, oy_, open_w, open_h, "binD")
+    for j in range(oy_ + 1, oy_ + open_h - 1):          # adapter plate: faint circuit traces
+        for i in range(ox_ + 1, ox_ + open_w - 1):
+            if ((i - ox_) % 8 == 4 or (j - oy_) % 8 == 4) and BAYER[j % 4][i % 4] < 8:
+                px(i, j, "bin")
+    for i in range(ox_ + 2, ox_ + open_w - 2, 8):       # solder pads on the trace crossings
+        for j in range(oy_ + 4, oy_ + open_h - 2, 8):
+            px(i + 2, j, "hullD")
+    rect(ox_, oy_, open_w, 2, (0, 0, 0))
+    shade(ox_, oy_ + 2, open_w, 2, 0.35)                # top lip shadow
+    rect(ox_ + open_w - 1, oy_, 1, open_h, mix(body, dark, 0.7))     # right jamb
+    rect(ox_ - 1, oy_, 1, open_h, lit)                               # lit left jamb (hinge side)
+    hinge = ox_ - 1                                     # door swung open towards the viewer-left
+    for i in range(1, hinge):
+        flare = round((hinge - i) * 0.3)
+        c = mix(body, dark, 0.35) if i < hinge - 2 else dark
+        if (hinge - i) % 5 == 2:
+            c = mix(c, dark, 0.5)                       # stiffening ribs on the inner skin
+        for j in range(oy_ - flare, oy_ + open_h + flare):
+            px(i, j, c)
+    for j in (oy_ + 3, oy_ + open_h - 5):               # hinge pins
+        rect(hinge - 1, j, 2, 2, "metalL")
+    for y in range(h - 9, h):                           # the base sinks into the dark silo
+        k = (y - (h - 9)) / 9
+        for x in range(w):
+            r_, g_, b_, a_ = cv.P[x, y]
+            if a_ == 255 and BAYER[y % 4][x % 4] < 16 * min(1.0, k * 1.3):
+                cv.P[x, y] = mix((r_, g_, b_), INK, 0.55) + (255,)
+    for y in range(h):                                  # ink outline round the silhouette
+        for x in range(w):
+            if cv.P[x, y][3] == 0 and any(0 <= x + dx < w and 0 <= y + dy < h and cv.P[x + dx, y + dy][3] == 255
+                                          for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1))):
+                cv.P[x, y] = INK + (254,)
+    for y in range(h):
+        for x in range(w):
+            if cv.P[x, y][3] == 254:
+                cv.P[x, y] = INK + (255,)
+    info = {"w": w, "h": h, "cyl_x": x0, "cyl_w": cyl_w, "name": look["name"], "ship_class": look["cls"],
+            "opening": {"x": ox_, "y": oy_, "w": open_w, "h": open_h}}
+    return cv.img, info
+
+
+ROCKET_IMGS, ROCKET_INFO = {}, {}
+for _tid in ROCKET_TYPES:
+    ROCKET_IMGS[_tid], ROCKET_INFO[_tid] = make_rocket(_tid)
+
+
+def rocket_pos(tid):
+    i = ROCKET_INFO[tid]
+    return ROCKET_CX - (i["cyl_x"] + i["cyl_w"] // 2), ROCKET_BOTTOM - i["h"]
+
+
+def folded_origin(tid):
+    """ShipPreview origin that centres the folded ship stack in the rocket's opening (hangar.gd does the same)."""
+    i, (rx, ry) = ROCKET_INFO[tid], rocket_pos(tid)
+    o = i["opening"]
+    cx, cy = rx + o["x"] + o["w"] // 2, ry + o["y"] + o["h"] // 2
+    return cx - PREVIEW_BOX[0] // 2, cy + 9 - (PREVIEW_BOX[1] // 2 - 2)   # stack (dish + body) centre = body centre - 9
+
+
+# ================================================================================
 #                 PREVIEW: stocked shelves, ship on the bay, crew carrying parts
 # ================================================================================
-def ship_preview(ox0, oy0, cls_id, upgrades):
+def ship_preview(ox0, oy0, cls_id, upgrades, folded=False):
     """Port of scripts/design/ship_preview.gd _draw(): identical placement of body + parts."""
     cls = CLASSES[cls_id]
     body = load(BASE_DIR / cls["body"])
@@ -868,16 +1017,18 @@ def ship_preview(ox0, oy0, cls_id, upgrades):
     wing = part_sprite("solar_large", "mounted") if "solar_large" in upgrades \
         else load(BASE_DIR / PARTS["solar_small"]["mounted"])
     wy = oy + bh_ // 2 - wing.height // 2
-    blit(wing, ox - wing.width, wy, flip=True)
-    blit(wing, ox + bw_, wy)
-    if "magnetometer" in upgrades:
+    if not folded:
+        blit(wing, ox - wing.width, wy, flip=True)
+        blit(wing, ox + bw_, wy)
+    if "magnetometer" in upgrades and not folded:
         blit(part_sprite("magnetometer", "mounted"), ox + bw_ - 3, oy + bh_ - 3)
     blit(body, ox, oy)
     top = part_sprite("antenna_high", "mounted") if "antenna_high" in upgrades \
         else load(BASE_DIR / PARTS["antenna_low"]["mounted"])
     blit(top, ox + bw_ // 2 - top.width // 2, oy - top.height + 2)
-    eng = load(BASE_DIR / PARTS["engine_main"]["mounted"])
-    blit(eng, ox + bw_ // 2 - eng.width // 2, oy + bh_ - 1)
+    if not folded:
+        eng = load(BASE_DIR / PARTS["engine_main"]["mounted"])
+        blit(eng, ox + bw_ // 2 - eng.width // 2, oy + bh_ - 1)
     thr = load(BASE_DIR / PARTS["thrusters_basic"]["mounted"])
     for (tx_, ty_) in ((ox - 1, oy - 1), (ox + bw_ - 3, oy - 1), (ox - 1, oy + bh_ - 3), (ox + bw_ - 3, oy + bh_ - 3)):
         blit(thr, tx_, ty_)
@@ -918,7 +1069,8 @@ def evaluate(cls_id, upgrades):
             gen += wv
         else:
             draw -= wv
-    launcher = next((l for l in STATS["launchers"] if mass <= l["capacity_kg"] * 0.9), None)
+    _rid = next(t for t, v in ROCKET_TYPES.items() if v["cls"] == cls_id)       # the class's rocket
+    launcher = next((l for l in STATS["launchers"] if l["id"] == _rid), None)
     if launcher:
         cost += launcher["cost"]
     return {"mass": mass, "mass_limit": float(cls["mass_limit_kg"]), "cost": cost, "budget": float(STATS["total_budget"]),
@@ -986,7 +1138,10 @@ if not ARGS.no_crew:
     bench0 = LAYOUT["benches"][0]                                   # a part parked on a workbench
     spr = part_sprite("rtg", "mounted")
     blit(spr, bench0["x"] + 6, bench0["y"] + (bench0["h"] - spr.height) // 2)
-ship = ship_preview(PREVIEW_ORIGIN[0], PREVIEW_ORIGIN[1], cls_id, mounted_upgrades)
+_tid = next(t for t, v in ROCKET_TYPES.items() if v["cls"] == cls_id)
+blit(ROCKET_IMGS[_tid], *rocket_pos(_tid))
+ship = ship_preview(*folded_origin(_tid), cls_id, mounted_upgrades, folded=True)
+blit(SILO_FRONT, 0, 0)
 sock_role = "scientist" if not ARGS.no_crew else None               # carrier on the bay lights the open cells
 for cell in ship["open"]:
     at = (ship["ox"] + cell["x"], ship["oy"] + cell["y"])
@@ -994,9 +1149,6 @@ for cell in ship["open"]:
     if sock_role:
         blit(load(UPG_DIR / FRAMES[sock_role]["slot"]), *at)
 o_x, o_y, o_bw, o_bh = ship["ox"], ship["oy"], ship["bw"], ship["bh"]
-for (mx, my, r) in ((o_x - 2, o_y + o_bh // 2, "engineer"), (o_x + o_bw + 1, o_y + o_bh // 2, "engineer"),
-                    (o_x + o_bw - 1, o_y + o_bh - 1, "scientist")):  # wings + boom mount points
-    blit(tint(MOUNT_GLOW, ROLE[r][0]), mx - 5, my - 5)
 
 nav_slot = next(s for s in SHELF_SLOTS if s["part_id"] == "star_tracker")
 if not ARGS.no_crew:
@@ -1084,7 +1236,7 @@ if CARD:
 # ================================================================================
 #                                   EXPORT
 # ================================================================================
-for sub in ("maps", "preview", "ui", "sockets", "placeholders/icons", "placeholders/mounted"):
+for sub in ("maps", "preview", "ui", "sockets", "rockets", "placeholders/icons", "placeholders/mounted"):
     (OUT / sub).mkdir(parents=True, exist_ok=True)
 
 
@@ -1107,6 +1259,19 @@ for pid, ph in PLACEHOLDER.items():
     save_scaled(ph["icon"], OUT / f"placeholders/icons/{pid}.png", scales=(4,))
     save_scaled(ph["mounted"], OUT / f"placeholders/mounted/{pid}.png", scales=(4,))
 
+save_scaled(SILO_FRONT, OUT / "maps/hangar_silo_front_480x270.png", scales=(4,))
+for _tid, _img in ROCKET_IMGS.items():
+    save_scaled(_img, OUT / f"rockets/bay_{_tid}.png", scales=(4,))
+    ROCKET_INFO[_tid]["sprite"] = res(OUT / f"rockets/bay_{_tid}.png")
+LAYOUT["rocket"] = {
+    "note": "drawn at runtime: the class's rocket rises out of the silo hole, cylinder centred on center_x, base "
+            "on bottom_y; then `front` (the deck in front of the hole) is drawn over it. The folded ship "
+            "(ShipPreview.folded) is centred in `opening` (sprite-local). Collision = the sprite rect + the silo "
+            "obstacle; SPACE within reach opens the rocket board.",
+    "center_x": ROCKET_CX, "bottom_y": ROCKET_BOTTOM, "reach": 12, "types": ROCKET_INFO,
+    "silo": {"x": SILO_C[0], "y": SILO_C[1], "rx": SILO_R[0], "ry": SILO_R[1]},
+    "front": res(OUT / "maps/hangar_silo_front_480x270.png"),
+}
 LAYOUT["map"] = res(OUT / "maps/hangar_480x270.png")
 LAYOUT["overlay"]["texture"] = res(OUT / "maps/hangar_overlay_480x270.png")
 LAYOUT["shelf_slots"] = SHELF_SLOTS
@@ -1123,7 +1288,7 @@ LAYOUT["info_card"] = {"texture": res(OUT / "ui/info_card.png"), "patch_margins"
 LAYOUT["placeholders"] = {pid: {"icon": res(OUT / f"placeholders/icons/{pid}.png"),
                                 "mounted": res(OUT / f"placeholders/mounted/{pid}.png")} for pid in PLACEHOLDER}
 order_keys = ["base_size", "map", "overlay", "walkable", "obstacles", "shelf_slots", "racks", "assembly",
-              "class_stands", "benches", "board", "launch_door", "entrance", "spawns", "carry", "sockets",
+              "class_stands", "rocket", "benches", "board", "launch_door", "entrance", "spawns", "carry", "sockets",
               "info_card", "placeholders"]
 with open(OUT / "hangar_layout.json", "w", encoding="utf-8") as f:
     json.dump({k: LAYOUT[k] for k in order_keys}, f, indent=2)

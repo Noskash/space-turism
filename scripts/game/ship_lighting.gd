@@ -25,7 +25,7 @@ const SUN_ANGLE_END := deg_to_rad(300.0)     # up-right
 const CENTER := Vector2(240, 135)
 const WALL_HEIGHT := 14.0
 const PROP_HEIGHT := {"rack": 12.0, "comms-console": 6.0}
-const SCREEN := Rect2(-12, -12, 504, 294)
+const SCREEN := Rect2(-12, -40, 504, 322)   # map coords; reaches above the map for the HUD band (UiKit.world_offset)
 
 var progress := 0.0               # 0 at Earth .. 1 at Mars
 var sun_dir := Vector2.LEFT       # towards the Sun, screen space

@@ -200,6 +200,33 @@ const ICONS_8 := {
 		".ww.....",
 		".wl.....",
 		"........"],
+	"fire": [   # keeps its own colours (not tinted)
+		"........",
+		"...y....",
+		"...yo...",
+		"..yyo.y.",
+		".yywyoo.",
+		".ywwwyo.",
+		"..ywyo..",
+		"........"],
+	"extinguisher": [
+		"........",
+		"..ww....",
+		".w.ww...",
+		"...ll...",
+		"..wwww..",
+		"..wwwl..",
+		"..wwll..",
+		"........"],
+	"ping": [
+		"........",
+		".wwwwww.",
+		".wwkkww.",
+		".wwkkww.",
+		".wwwwww.",
+		".wwkkww.",
+		"..w.....",
+		"........"],
 }
 
 const ICONS_16 := {

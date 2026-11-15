@@ -67,6 +67,18 @@ var _doom_boom := 0.0
 var _proximity := 0.0             # proximity alarm beep timer
 # Science bookkeeping made visible: "+10 SCIENCE" at the lab, "+6 SENT HOME" at Comms, "-3 LOST".
 var _texts: Array[Dictionary] = []   # {p, text, col, life}
+
+# Burn shove: BRACE warning while a burn spools up, then a whoosh when it throws the crew.
+var _brace := -1.0                # seconds until the spooled burn fires (-1 = none)
+var _klaxon := 0.0
+var _shove_seq := -1
+# Ticket grades: a stamp pops over the station (PERFECT / GOOD / LATE / MISSED) + the streak.
+const GRADE_LOOK := {
+	perfect = ["PERFECT!", Color("ffc640")], good = ["GOOD", Color("5cf07a")],
+	late = ["LATE", Color("ff9a3c")], missed = ["MISSED", Color("ff5050")],
+}
+var _grade_seq := -1
+var _stamps: Array[Dictionary] = []  # {p, text, col, streak, life}
 var _sent_acc := 0.0
 var _lost_acc := 0.0
 var _sci_timer := 0.0
@@ -124,8 +136,8 @@ func _on_state(state: Dictionary) -> void:
 	var was_offline: Array = _prev.get("offline", [])
 	var offline: Array = state.get("offline", [])
 	for event: Dictionary in _prev.get("events", []):
-		if now_ids.has(event.id):
-			continue
+		if now_ids.has(event.id) or event.get("kind", "") == "fire":
+			continue   # (a fire ticket ends when its last flame is out: ShipFire shows that)
 		var at := _station_pos(event.role)
 		if event.role in offline and event.role not in was_offline:
 			_explode(at)
@@ -140,6 +152,8 @@ func _on_state(state: Dictionary) -> void:
 		Sfx.set_loop("hum", false)
 	_science_numbers(state)
 	_weather(state)
+	_burn_shove(state)
+	_grades(state)
 	var punctured: bool = int(state.get("dust", {}).get("hits", 0)) > int(_prev.get("dust", {}).get("hits", 0))
 	if not punctured and float(state.get("fuel", 0)) < float(_prev.get("fuel", 0)) - 1.0:
 		_burn = 0.6
@@ -231,6 +245,47 @@ func _science_numbers(state: Dictionary) -> void:
 		_float_text(_station_pos("scientist") + Vector2(0, 18), "+%d SCIENCE" % roundi(stored + maxf(sent, 0.0)), Color("d0a8ff"))
 	_sent_acc += maxf(sent, 0.0)
 	_lost_acc += maxf(float(state.get("science_lost", 0.0)) - float(_prev.get("science_lost", 0.0)), 0.0)
+
+
+## BRACE klaxon while a burn spools up; whoosh + dust kicked up under everyone when it fires.
+func _burn_shove(state: Dictionary) -> void:
+	var brace := float(state.get("brace", {}).get("time_left", -1.0))
+	if brace >= 0.0 and _brace < 0.0:
+		_klaxon = 0.0   # sound right away
+	_brace = brace
+	var shove: Dictionary = state.get("shove", {})
+	var seq := int(shove.get("seq", 0))
+	if _shove_seq != -1 and seq > _shove_seq:
+		var dir := Vector2(float(shove.get("x", 0.0)), float(shove.get("y", 0.0)))
+		var strength := float(shove.get("strength", 1.0))
+		Sfx.play("whoosh", 1.2 - 0.2 * strength)
+		_shake = maxf(_shake, 0.3 + 0.3 * strength)
+		if _crew:
+			for member in _crew.get_children():
+				if member is CrewMember and member.docked_station() == null:
+					for i in 6:   # skid dust trailing behind the slide
+						_dust.append({p = member.position + Vector2(_rng.randf_range(-3, 3), -1),
+								v = -dir * _rng.randf_range(10, 30) + Vector2(_rng.randf_range(-6, 6), -4),
+								life = 0.5, max = 0.5})
+	_shove_seq = seq
+
+
+## A stamp over the station for every newly graded ticket (sim grade_log, so all peers agree).
+func _grades(state: Dictionary) -> void:
+	var entries: Array = state.get("grade_log", [])
+	var seq := int(state.get("grades", {}).get("seq", 0))
+	if _grade_seq == -1:
+		_grade_seq = seq   # don't replay the old ones when joining
+		return
+	for g: Dictionary in entries:
+		if int(g.seq) <= _grade_seq:
+			continue
+		var look: Array = GRADE_LOOK.get(str(g.grade), ["", Color.WHITE])
+		var at := _station_pos(str(g.role)) + Vector2(0, -30)
+		_stamps.append({p = at, text = look[0], col = look[1], streak = int(g.streak), life = 1.4, max = 1.4})
+		if g.grade == "perfect":
+			Sfx.play("perfect", 1.0 + minf(int(g.streak), 8) * 0.04)   # climbs with the streak
+	_grade_seq = maxi(_grade_seq, seq)
 
 
 func _float_text(at: Vector2, text: String, col: Color) -> void:
@@ -326,6 +381,16 @@ func _process(delta: float) -> void:
 		if _lost_acc >= 1.0:
 			_float_text(_station_pos("scientist") + Vector2(0, 28), "-%d LOST (STORAGE FULL)" % roundi(_lost_acc), Color("ff6a5a"))
 			_lost_acc = 0.0
+	if _brace >= 0.0:
+		_brace = maxf(_brace - delta, 0.0)
+		_klaxon -= delta
+		if _klaxon <= 0.0:
+			_klaxon = 0.5
+			Sfx.play("klaxon")
+	for i in range(_stamps.size() - 1, -1, -1):
+		_stamps[i].life -= delta
+		if _stamps[i].life <= 0.0:
+			_stamps.remove_at(i)
 	for i in range(_texts.size() - 1, -1, -1):
 		var ft: Dictionary = _texts[i]
 		ft.life -= delta
@@ -472,13 +537,14 @@ func _step(list: Array[Dictionary], delta: float) -> void:
 func _draw() -> void:
 	# Stars live in screen space (counter the ship's bob/shake) and hide behind the hull.
 	var cam := -_game.position if _game else Vector2.ZERO
+	var off := UiKit.world_offset           # the camera moves the map down; stars still fill the whole screen
 	for s in _stars:
 		var p := Vector2(s.x, s.y)
-		if HULL.has_point(p):
+		if HULL.has_point(p - off):
 			continue
 		var a := 0.3 + s.z / 40.0
 		var streak := 1.0 + (2.0 if s.z > 20.0 else 0.0)
-		draw_rect(Rect2(cam + p, Vector2(streak, 1)), Color(0.85, 0.9, 1.0, a))
+		draw_rect(Rect2(cam - off + p, Vector2(streak, 1)), Color(0.85, 0.9, 1.0, a))
 
 	# Radiation shield: a shimmering bubble around the hull while it is up (brighter in the wave).
 	if _shields:
@@ -506,8 +572,8 @@ func _draw() -> void:
 		draw_rect(Rect2(mp + Vector2(-2, -2), Vector2(2, 2)), Color("4a4038"))
 	for g in _grains:
 		var gp := Vector2(g.x, g.y)
-		if not HULL.has_point(gp):
-			draw_rect(Rect2(cam + gp, Vector2(g.z / 40.0, 1)), Color(0.85, 0.78, 0.65, 0.75))
+		if not HULL.has_point(gp - off):
+			draw_rect(Rect2(cam - off + gp, Vector2(g.z / 40.0, 1)), Color(0.85, 0.78, 0.65, 0.75))
 
 	# Engines: layered flickering flames + glow at both nozzles, longer while burning.
 	for nozzle: Vector2 in NOZZLES:
@@ -567,8 +633,50 @@ func _draw() -> void:
 		var pos := ((ft.p as Vector2) - Vector2(w / 2.0, 0)).round()
 		draw_string_outline(UiFont.font(), pos, ft.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 8, 2, Color(0, 0, 0, 0.8 * a))
 		draw_string(UiFont.font(), pos, ft.text, HORIZONTAL_ALIGNMENT_LEFT, -1, UiFont.px(8), Color(ft.col, a))
+	_draw_brace(margin)
+	_draw_stamps()
 	if _flash > 0.0:  # meteoroid impact
 		draw_rect(margin, Color(1.0, 0.95, 0.85, 0.7 * _flash * _flash))
+
+
+## Burn spooling up: amber hazard bands at the screen edges + a blinking "BRACE!" tag over everyone
+## who is not holding on (docked crew are safe).
+func _draw_brace(margin: Rect2) -> void:
+	if _brace < 0.0:
+		return
+	var on := fmod(_t, 0.3) < 0.18
+	var amber := Color(1.0, 0.75, 0.15, 0.35 if on else 0.15)
+	for x in range(int(margin.position.x), int(margin.end.x), 12):   # striped bands top + bottom
+		draw_rect(Rect2(x + (int(_t * 30.0) % 12), margin.position.y + 6, 6, 3), amber)
+		draw_rect(Rect2(x + (int(_t * 30.0) % 12), margin.end.y - 9, 6, 3), amber)
+	if not _crew or not on:
+		return
+	for member in _crew.get_children():
+		if member is CrewMember and member.docked_station() == null:
+			var label := "BRACE! %.1f" % _brace
+			var w := roundf(UiKit.text_w(label, 7) + 6)
+			var r := Rect2(roundf(member.position.x - w / 2.0), member.position.y - 46.0, w, 10)   # above prompts
+			UiKit.panel(self, r, Color("3a2400"), UiKit.WARN)
+			UiKit.text(self, Vector2(r.position.x + 3, r.end.y - 2), label, 7, UiKit.WARN, 0)
+
+
+## Grade stamps: pop in (whole-pixel bounce), hold, then rise and fade. Streak of 3+ adds "xN".
+func _draw_stamps() -> void:
+	for s: Dictionary in _stamps:
+		var age: float = s.max - s.life
+		var hop := roundf(maxf(0.0, 6.0 * (1.0 - age / 0.2)))   # drops in from above
+		var rise := roundf(maxf(0.0, (age - 0.8) * 20.0))
+		if s.life < 0.3 and fmod(s.life, 0.1) < 0.05:
+			continue
+		var label: String = s.text
+		if int(s.streak) >= 3 and s.text != "MISSED":
+			label += "  x%d" % int(s.streak)
+		var w := roundf(UiKit.text_w(label, 8) + 8)
+		var h := maxf(12.0, UiKit.line_h(8) + 3)
+		var p: Vector2 = s.p
+		var r := Rect2(clampf(roundf(p.x - w / 2.0), 2.0, 478.0 - w), p.y - hop - rise, w, h)
+		UiKit.panel(self, r, UiKit.PANEL_DARK, s.col)
+		UiKit.text(self, Vector2(r.position.x + 4, r.end.y - 3), label, 8, s.col, 0)
 
 
 ## Where the meteoroid is now: dives in from above the top-right (seen over the hull in the top-down

@@ -331,6 +331,49 @@ def clank():
     return seq(knock(900), silence(0.05), knock(700))
 
 
+# --- fun pass: burn shove, fire, pings, grades ---------------------------------------------
+def klaxon():
+    """BRACE: a burn is spooling up. Short harsh two-tone honk (plays every 0.5 s)."""
+    return seq(tone(392, 392, 0.12, volume=0.32, duty=0.35), tone(330, 330, 0.16, volume=0.32, duty=0.35))
+
+
+def whoosh():
+    """The burn fires and throws the crew: a falling rush of air."""
+    rush = noise(0.45, volume=0.55, smooth=0.6, attack=0.02)
+    thump = tone(110, 50, 0.3, wave_fn=tri, volume=0.5)
+    return mix(rush, thump)
+
+
+def ignite():
+    """A flame catches: soft whump + crackle."""
+    whump = noise(0.35, volume=0.6, smooth=0.85, attack=0.01)
+    crackle = [x * (1.0 if rng.random() < 0.08 else 0.0) for x in noise(0.35, volume=0.6, step=2)]
+    return mix(whump, crackle)
+
+
+def fire():
+    """Burning, 1 s seamless: low roar + random pops."""
+    roar = noise(1.0, volume=0.22, smooth=0.9, attack=0.0)
+    pops = [(rng.uniform(-1, 1) * 0.5 if rng.random() < 0.004 else 0.0) for _ in range(n(1.0))]
+    return mix(roar, pops)
+
+
+def spray():
+    """Extinguisher, 1 s seamless: wide hiss, a little lower than a breach."""
+    out = noise(1.0, volume=0.32, smooth=0.35, attack=0.0)
+    return [x * (0.85 + 0.15 * math.sin(2 * math.pi * 7 * i / len(out))) for i, x in enumerate(out)]
+
+
+def ping():
+    """Crew call-out: bright two-note chirp."""
+    return seq(tone(note(15), note(15), 0.05, volume=0.3, duty=0.25), tone(note(22), note(22), 0.09, volume=0.3, duty=0.25))
+
+
+def perfect():
+    """PERFECT grade: quick rising arpeggio."""
+    return seq(*[tone(note(s), note(s), 0.05, volume=0.25, duty=0.25) for s in (12, 16, 19, 24)])
+
+
 SOUNDS = {
     "ui_hover": ui_hover, "ui_click": ui_click,
     "step": step, "dock": dock, "undock": undock, "select": select, "toggle": toggle,
@@ -343,6 +386,8 @@ SOUNDS = {
     "remind": remind, "warn": warn, "chute": chute, "page": page,
     "siren": siren, "wave": wave_hit, "impact": impact, "static": static,
     "hiss": hiss, "clank": clank,
+    "klaxon": klaxon, "whoosh": whoosh, "ignite": ignite, "fire": fire, "spray": spray,
+    "ping": ping, "perfect": perfect,
 }
 
 if __name__ == "__main__":

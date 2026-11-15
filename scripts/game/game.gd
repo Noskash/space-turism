@@ -6,6 +6,7 @@ const MENU_SCENE := "res://scenes/main_menu.tscn"
 const JOIN_SCENE := "res://scenes/join_room.tscn"
 
 ## Skins the local player cycles through with K ("" = placeholder astronaut).
+const WORLD_Y := 12.0   # screen band above the ship for the top HUD (map hull 14..258 -> 26..270, none cut off)
 const PLAYER_SKINS := ["friend_1", "friend_2", ""]
 
 @onready var _map: ShipMap = $ShipMap
@@ -29,10 +30,24 @@ func _exit_tree() -> void:
 	Sfx.set_loop("hum", false)
 	Sfx.set_loop("engine", false)
 	PixelMode.exit(get_window(), _saved_window)
+	UiKit.world_offset = Vector2.ZERO
 
 
 func _ready() -> void:
 	texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # inherited by map, stations, crew
+	# Move the ship down WORLD_Y px so the top HUD blocks sit over space, not over the rooms. A camera (not
+	# moving this node) keeps every map coordinate as it was; only screen-space overlays add UiKit.world_offset.
+	UiKit.world_offset = Vector2(0, WORLD_Y)
+	var cam := Camera2D.new()
+	cam.anchor_mode = Camera2D.ANCHOR_MODE_FIXED_TOP_LEFT
+	cam.top_level = true          # ignore the ship's bob / shake (Vfx moves this node)
+	cam.position = -UiKit.world_offset
+	add_child(cam)
+	cam.make_current()
+	var space := Node2D.new()     # deep-space colour of the map art behind the new band (else the grey clear colour shows)
+	space.z_index = -100
+	space.draw.connect(func() -> void: space.draw_rect(Rect2(-24, -48, 528, 344), Color8(9, 8, 22)))
+	add_child(space)
 	Controls.ensure_actions()
 	_net = NetSync.new()
 	_net.name = "NetSync"
@@ -43,6 +58,8 @@ func _ready() -> void:
 	Vfx.new().setup(self, _map, _crew)
 	ShipLighting.new().setup(self, _map, _crew)
 	HullDamage.new().setup(self, _map, _crew)
+	ShipFire.new().setup(self, _crew)      # flames + extinguisher racks
+	CrewPings.new().setup(self)            # G: crew call-outs
 	add_child(GameOver.new())
 	add_child(MissionReport.new())   # campaign missions: report after Mars Orbit Insertion
 	add_child(Radio.new().setup(_hud.radio_label))
@@ -60,7 +77,7 @@ func _ready() -> void:
 		_mission.set_crew(_roster())
 	Events.state_changed.connect(_apply_crew_health)
 	add_child(CrewPanel.new())   # astronauts + radiation dose, bottom left
-	PauseMenu.attach(self, "ABANDON MISSION", "WASD MOVE · SHIFT RUN · SPACE USE · Q LEAVE · E RADAR · TAB TASKS · J CODEX · H HELP")
+	PauseMenu.attach(self, "ABANDON MISSION", "WASD MOVE · SHIFT RUN · SPACE USE · Q LEAVE · G CALL OUT · E RADAR · TAB HUD · J CODEX · H HELP")
 	_guide = EventGuide.new()
 	_guide.name = "EventGuide"
 	_guide.map = _map
@@ -72,18 +89,18 @@ func _ready() -> void:
 	add_child(radar)
 	_tutorial = Tutorial.attach(self, "cruise", [
 		{title = "Fly the mission", rect = UiKit.hud_rect("tasks").grow(1),
-		 body = "Problems pop up as tasks, top right, each with a countdown in its role's colour. Run to that station before the timer runs out. SHIFT = run, TAB folds the list."},
+		 body = "Problems pop up as tasks, top right, each with a countdown in its role's colour. Run to that station before the timer runs out. SHIFT = run. TAB folds the list; press again to hide the whole top HUD, again to bring it back."},
 		{title = "Ship and mission", rect = UiKit.hud_rect("resources").merge(UiKit.hud_rect("progress")).grow(1),
 		 body = "Top left: POWER, FUEL and DATA storage. Top centre: the trip from Earth to Mars, the Deep Space Network pass, science sent home and science lost."},
 		{title = "Action button", rect = UiKit.hud_rect("action").grow(1),
 		 body = "Bottom right shows what SPACE does right now: DOCK at a station, REPAIR, FIX, DOWNLINK... Grey = nothing to do here."},
-		{title = "Stations", rect = Rect2(336, 34, 108, 168),
+		{title = "Stations", rect = UiKit.world_rect(Rect2(336, 34, 108, 168)),
 		 body = "Walk into a station's ring and press SPACE to dock. A/D pick an option, HOLD SPACE to work, Q leaves. BRIDGE (NAV): course-correction burns cost fuel and power."},
-		{title = "Engine room", rect = Rect2(30, 138, 118, 112),
+		{title = "Engine room", rect = UiKit.world_rect(Rect2(30, 138, 118, 112)),
 		 body = "PWR: switch loads (instruments, transmitter, heater) on and off and reset storm faults. The battery drains whenever loads use more power than you make."},
-		{title = "Comms", rect = Rect2(30, 34, 118, 80),
+		{title = "Comms", rect = UiKit.world_rect(Rect2(30, 34, 118, 80)),
 		 body = "COM: HOLD SPACE to send data home - only while a Deep Space Network station is in view and the transmitter is on. Full storage = lost science."},
-		{title = "Science lab", rect = Rect2(160, 34, 164, 80),
+		{title = "Science lab", rect = UiKit.world_rect(Rect2(160, 34, 164, 80)),
 		 body = "SCI: when a science window opens, HOLD SPACE to observe (instruments ON). Science goes into storage (DATA bar) and only SCORES once Comms sends it home. Full storage = new science is lost."},
 		{title = "Events", rect = Rect2(UiKit.hud_rect("progress").position.x, UiKit.hud_rect("progress").end.y + 2, UiKit.hud_rect("progress").size.x, 14),
 		 body = "Radiation storms, comet debris, faults, science windows... Big ones slide a banner across the screen, then stay here with a countdown. The first time each one happens, a walkthrough shows you how to beat it."},

@@ -70,6 +70,9 @@ func _process(delta: float) -> void:
 func _input(event: InputEvent) -> void:
 	if not visible or _t < DELAY + 0.6 or not (event is InputEventKey and event.pressed and not event.echo):
 		return
+	# Mark the key handled first: _go() can change the scene (or leaving the room can), which takes this
+	# node out of the tree, and then there is no viewport to call.
+	get_viewport().set_input_as_handled()
 	var last := _page >= _pages() - 1
 	match event.physical_keycode:
 		KEY_SPACE, KEY_ENTER:
@@ -86,7 +89,6 @@ func _input(event: InputEvent) -> void:
 				_go("other")   # leaves the room (co-op: the host closes it for everyone)
 		KEY_ESCAPE:
 			_go("menu")
-	get_viewport().set_input_as_handled()
 
 
 func _decides() -> bool:
@@ -110,6 +112,22 @@ func _go(where: String) -> void:
 
 ## RESULT · ORBIT (science from Mars orbit; only after a brake burn into orbit) · CREW (radiation dose
 ## per astronaut; only when the sim had a crew) · NASA (always last).
+const RATING_COLORS := {S = Color("ffd34a"), A = Color("8cffb0"), B = Color("4fd8ff"), C = Color("ff9a3c")}
+
+
+## CREW RATING S / A / B / C from the ticket grades (state.grades): PERFECT 3, GOOD 2, LATE 1, MISSED 0
+## points, out of 3 per graded ticket. "" if nothing was graded. Juice for the report, not the score.
+static func crew_rating(grades: Dictionary) -> String:
+	var p := int(grades.get("perfect", 0))
+	var g := int(grades.get("good", 0))
+	var l := int(grades.get("late", 0))
+	var total := p + g + l + int(grades.get("missed", 0))
+	if total == 0:
+		return ""
+	var k := float(3 * p + 2 * g + l) / float(3 * total)
+	return "S" if k >= 0.85 else ("A" if k >= 0.65 else ("B" if k >= 0.4 else "C"))
+
+
 func _page_list() -> Array[String]:
 	var out: Array[String] = ["result"]
 	if str(_state.get("finished", {}).get("outcome", "")) == "orbit":
@@ -179,6 +197,13 @@ func _reasons() -> Array[String]:
 		out.append("%d hull breach(es) opened by debris." % int(st.breaches))
 	if int(st.get("knockouts", 0)) >= 3:
 		out.append("Stations went OFFLINE %d times - missed tickets cost repair time." % int(st.knockouts))
+	if int(st.get("freezes", 0)) > 0:
+		out.append("The fuel froze %d time(s) far from the Sun (%d s with no burns): hydrazine freezes near 2 C - heater, RTG or thermal control keep it liquid." % [
+				int(st.freezes), int(st.get("frozen_time", 0))])
+	if int(st.get("fire_overload", 0)) > 0:
+		out.append("The power bus overheated %d time(s): the loads drew more than the panels made, and the wiring caught fire." % int(st.fire_overload))
+	if int(st.get("fire_knockouts", 0)) > 0:
+		out.append("Fires burned out %d station(s) - put them out early, before they spread." % int(st.fire_knockouts))
 	if out.size() < 3:
 		out.append("Every part costs mass, power and budget - there is no single best design.")
 	return out.slice(0, 5)
@@ -239,11 +264,19 @@ func _draw_result(box: Rect2, accent: Color, k: float) -> void:
 		var parts := ("STARS %d + DATA SENT %d + HEALTHY CREW %d + ORBIT %d" if sandbox else "STARS %d + BONUS DATA %d + HEALTHY CREW %d + ORBIT %d") % [stars * Missions.STAR_POINTS,
 				int(f.get("bonus", 0)) * Missions.BONUS_POINTS, int(f.get("healthy", 0)) * Missions.HEALTHY_POINTS,
 				int(f.get("orbit_science", 0)) * Orbits.ORBIT_POINTS]
-		_text(parts, Vector2(right - UiFont.width(parts, 6), box.position.y + 61), 6, Color(0.6, 0.65, 0.8, k))
+		# own line under the stars (it used to sit beside them and overlap at bigger TEXT SIZE)
+		_text(parts, Vector2(right - UiFont.width(parts, 6), box.position.y + 69 + _grow(4)), 6, Color(0.6, 0.65, 0.8, k))
 		var best := "NEW BEST!" if _new_best else "BEST %d" % _best
 		var best_col := Color("8cffb0") if _new_best and fmod(_t, 0.6) < 0.4 else Color(0.6, 0.65, 0.8)
 		_text(best, Vector2(x, box.position.y + 52), 9, Color(best_col, k))
-	var y := box.position.y + 74
+		# Crew rating from the ticket grades (how fast the crew worked; NOT part of the score).
+		var rating := crew_rating(_state.get("grades", {}))
+		if rating != "":
+			var rating_col: Color = RATING_COLORS.get(rating, Color.WHITE)
+			_text("CREW " + rating, Vector2(x, box.position.y + 66 + _grow(4)), 9, Color(rating_col, k))
+	var y := box.position.y + 81 + _grow(10)
+	var lh := maxf(10.0, roundf(UiFont.px(8) * 1.25))
+	var bottom := box.end.y - 22 - lh   # keep clear of the tally line
 	if sandbox:   # which hazards were on: the thing to compare between sandbox flights
 		_text("HAZARDS FLOWN", Vector2(x, y), 7, Color(0.55, 0.6, 0.75, k))
 		y += 11
@@ -257,19 +290,25 @@ func _draw_result(box: Rect2, accent: Color, k: float) -> void:
 	else:
 		_text("GOALS", Vector2(x, y), 7, Color(0.55, 0.6, 0.75, k))
 		y += 11
+	var mark_w := UiFont.width("[x] ", 8)
 	for g: Dictionary in Missions.goals(_state):
 		_text("[x]" if g.done else "[ ]", Vector2(x, y), 8, Color(Color("8cffb0") if g.done else Color("ff6a5a"), k))
-		_text("%s  -  %s" % [g.text, g.short], Vector2(x + 20, y), 8, Color(1, 1, 1, k))
-		y += 11
+		for line in MissionSelect._wrap("%s  -  %s" % [g.text, g.short], box.size.x - 24 - mark_w, 8):
+			_text(line, Vector2(x + mark_w, y), 8, Color(1, 1, 1, k))
+			y += lh
 	y += 6
 	_text("WHY IT WENT THIS WAY", Vector2(x, y), 7, Color(0.55, 0.6, 0.75, k))
-	y += 11
+	y += lh
 	for reason in _why:
 		for line in MissionSelect._wrap("- " + reason, box.size.x - 24, 8):
+			if y > bottom:
+				break
 			_text(line, Vector2(x, y), 8, Color(0.85, 0.88, 0.95, k))
-			y += 10
-	var tally := "SENT %d · LOST %d · STORMS RECORDED %d · DAY %d" % [int(_state.get("science_sent", 0)),
-			int(_state.get("science_lost", 0)), int(_state.get("storms_recorded", 0)), int(f.get("day", 0))]
+			y += lh - 1
+	var gr: Dictionary = _state.get("grades", {})
+	var tally := "SENT %d · LOST %d · STORMS RECORDED %d · DAY %d · PERFECT %d · BEST STREAK %d" % [
+			int(_state.get("science_sent", 0)), int(_state.get("science_lost", 0)), int(_state.get("storms_recorded", 0)),
+			int(f.get("day", 0)), int(gr.get("perfect", 0)), int(gr.get("best", 0))]
 	_text(tally, Vector2(x, box.end.y - 22), 7, Color(0.5, 0.56, 0.7, k))
 
 
@@ -387,6 +426,11 @@ func _star(c: Vector2, full: bool, r: float, k: float) -> void:
 		_canvas.draw_colored_polygon(pts, Color(1.0, 0.83, 0.29, k))
 	pts.append(pts[0])
 	_canvas.draw_polyline(pts, Color(1.0, 0.83, 0.29, k) if full else Color(0.4, 0.45, 0.6, k), 1.0)
+
+
+## Extra room at bigger TEXT SIZE (0 at NORMAL).
+func _grow(n: float) -> float:
+	return roundf(n * (UiFont.scale() - 1.0) / 0.3)
 
 
 func _text(text: String, at: Vector2, size: int, col: Color) -> void:

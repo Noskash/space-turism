@@ -3,9 +3,12 @@ extends Node2D
 ##
 ## The crew walks around the hangar (sprites/hangar_assets) and builds ONE spacecraft:
 ##   - SPACE at a role shelf picks a part up (only the role that owns the shelf), F reads it.
-##   - Carry it to the assembly bay, SPACE installs it (DesignRules.check_add). SPACE next to a
-##     fitted part on the bay takes it off again; SPACE at its shelf puts it back.
-##   - SPACE at a class stand switches the ship class (parts that no longer fit go back on the shelf).
+##   - The rocket on the bay (fairing door open, the folded ship inside): SPACE opens the full-screen
+##     RocketBoard. The part in your hand rides on a cell cursor: SPACE on an empty cell installs it,
+##     on a taken cell swaps (the old part comes into your hand); empty hands take a part out.
+##     Anyone can swap anyone's part. SPACE at its shelf puts a part back.
+##   - SPACE at a class plate switches ship class AND rocket (DesignRules.CLASS_ROCKET); parts in
+##     cells the new body lacks go back on the shelf. Nothing is filled in for you.
 ##   - The planner console (NAV) opens the launch window planner as an overlay: date, path, orbit.
 ##   - SPACE in the launch door zone = READY. All READY (ship has no errors, plan possible) -> launch pad.
 ##   Any change to the ship or the plan un-readies everyone.
@@ -24,7 +27,6 @@ const LAUNCH_SCENE := "res://scenes/launch/launch.tscn"
 const JOIN_SCENE := "res://scenes/join_room.tscn"
 const PLAYER_SKINS := ["friend_1", "friend_2", ""]
 const CREW_SEND := 1.0 / 20.0
-const BAY_REACH := 14.0       # take a fitted part off: its cell centre within this of the feet
 const CONSOLE_REACH := 16.0
 const CARD_W := 156.0        # F card width at NORMAL text (grows with TEXT SIZE; height fits the content)
 const SIGN_PX := 6           # board text: painted into fixed boxes on the map, so it ignores TEXT SIZE
@@ -49,6 +51,9 @@ var _ui: Node2D               # info card + footer (screen space)
 var _console_sprite: Sprite2D
 var _planner: Node2D          # open planner overlay (null = closed)
 var _planner_layer: CanvasLayer
+var _board: RocketBoard       # open rocket board overlay (null = closed)
+var _board_layer: CanvasLayer
+var _rocket_shape: CollisionShape2D   # the rocket on the bay blocks the crew (size follows the class)
 var _card_target := {}        # what the F card shows ({} = closed)
 var _target := {}             # what SPACE / F act on right now
 var _message := ""
@@ -57,6 +62,10 @@ var _send_timer := 0.0
 var _launching := false
 var _time := 0.0
 var _card_box: StyleBoxTexture
+var radio := {on = false, track = 0}   # crew boombox on the right bench (host-owned, like the design)
+var _radio_audio: Radio
+var _radio_set: HangarDecor
+var _lighting: HangarLighting
 
 
 func _enter_tree() -> void:
@@ -80,6 +89,10 @@ func _ready() -> void:
 		design.erase("plan")
 	_build_scene()
 	_me = Network.my_id() if Network.is_in_room() else 1
+	_radio_audio = Radio.new().setup(null)
+	add_child(_radio_audio)
+	if _is_host():   # clients hear the host's station once its state arrives
+		radio = {on = true, track = randi() % Radio.TRACKS.size()}
 	_refresh_players()
 	_spawn_crew()
 	if Network.is_in_room():
@@ -105,12 +118,12 @@ func _attach_tutorial() -> void:
 		 body = "Together you build ONE spacecraft. Walk with WASD (hold SHIFT to run). Every part costs mass, power AND budget - there is no free upgrade."},
 		{title = "Your shelf", rect = Rect2(8, 2, 146, 54),
 		 body = "Each crew role has a shelf. SPACE picks up a part from YOUR shelf, F reads what it does and what it costs."},
-		{title = "Assembly bay", rect = Rect2(154, 46, 172, 108),
-		 body = "Carry the part onto the bay and press SPACE to install it. SPACE next to a fitted part takes it off; SPACE at its shelf puts it back."},
-		{title = "Shared limits", rect = Rect2(158, 0, 164, 46),
-		 body = "The board shows mass, power, budget, slots and the rocket that can lift you. They are shared by the whole crew. Negative power is allowed - the battery will drain in flight."},
-		{title = "Ship class", rect = Rect2(141, 170, 198, 82),
-		 body = "SPACE at a stand switches the ship class: more slots and mass limit, less budget left."},
+		{title = "The rocket", rect = Rect2(178, 34, 124, 130),
+		 body = "Your spacecraft sits folded inside the rocket's open fairing. Carry a part here and press SPACE: the rocket board opens. Put the part in any cell - or swap one out, it lands in your hand."},
+		{title = "Shared limits", rect = Rect2(158, 0, 164, 38),
+		 body = "The board shows mass, power, budget, slots and the rocket. They are shared by the whole crew. Negative power is allowed - the battery will drain in flight. Too heavy for the rocket = no launch."},
+		{title = "Ship + rocket", rect = Rect2(141, 170, 198, 82),
+		 body = "SPACE at a plate picks the ship class AND its rocket: Light flies on Electron, Balanced on Zenit, Heavy on Proton. More slots and lift, less budget. The parts you fetch yourselves."},
 		{title = "Planner console", rect = Rect2(372, 152, 56, 64),
 		 body = "The Navigator plans the launch date, the path and the Mars orbit here. Everyone sees the plan on the console."},
 		{title = "Launch door", rect = Rect2(404, 0, 68, 46),
@@ -126,13 +139,16 @@ func _is_host() -> bool:
 
 func _build_scene() -> void:
 	_build_walls()
-	var asm: Dictionary = _layout.get("assembly", {})
 	_preview = ShipPreview.new()
-	_preview.position = _v(asm.get("preview_origin", {}))
+	_preview.folded = true        # packed in the fairing: no wings, no boom
 	add_child(_preview)
 	_glow = Node2D.new()
 	_glow.draw.connect(_draw_glow)
 	add_child(_glow)
+	var silo_front := Sprite2D.new()          # deck in front of the silo hole: the rocket's base sinks into the floor
+	silo_front.texture = load(str(_layout.get("rocket", {}).get("front", "")))
+	silo_front.centered = false
+	add_child(silo_front)
 	_crew = Node2D.new()
 	_crew.name = "Crew"
 	_crew.y_sort_enabled = true
@@ -145,11 +161,19 @@ func _build_scene() -> void:
 	_console_sprite.offset = -_arr(_console.get("anchor", [24, 43]))
 	_console_sprite.position = CONSOLE_FEET
 	_crew.add_child(_console_sprite)
+	for d in HangarDecor.spawn(_crew):      # computers, plants, mug, radio (y-sorted with the crew)
+		if d.kind == "radio":
+			_radio_set = d
+	var motes := HangarDecor.Motes.new()
+	motes.z_index = 3
+	add_child(motes)
 	var overlay := Sprite2D.new()
 	overlay.texture = load(str(_layout.get("overlay", {}).get("texture", "")))
 	overlay.centered = false
 	overlay.z_index = 4
 	add_child(overlay)
+	_lighting = HangarLighting.new()        # z 4 after the overlay: relights everything below the prompts
+	add_child(_lighting)
 	_fx = Node2D.new()
 	_fx.z_index = 5
 	_fx.draw.connect(_draw_fx)
@@ -188,6 +212,7 @@ func _build_walls() -> void:
 	var desk := _rect(_console.get("obstacle", {}))
 	desk.position += CONSOLE_FEET - _arr(_console.get("anchor", [24, 43]))
 	rects.append(desk)
+	rects.append_array(HangarDecor.obstacles())
 	for r in rects:
 		var shape := RectangleShape2D.new()
 		shape.size = r.size
@@ -195,6 +220,9 @@ func _build_walls() -> void:
 		col.shape = shape
 		col.position = r.get_center()
 		body.add_child(col)
+	_rocket_shape = CollisionShape2D.new()
+	_rocket_shape.shape = RectangleShape2D.new()
+	body.add_child(_rocket_shape)
 
 
 func _refresh_players() -> void:
@@ -239,7 +267,7 @@ func _process(delta: float) -> void:
 	_message_time = maxf(_message_time - delta, 0.0)
 	if _local:
 		_target = _find_target(_local.global_position)
-		if not _launching and _planner == null and not Tutorial.is_blocking():
+		if not _launching and not _overlay_open() and not Tutorial.is_blocking():
 			_handle_input()
 	if not _card_target.is_empty() and not _same_target(_card_target, _target):
 		_card_target = {}
@@ -247,6 +275,7 @@ func _process(delta: float) -> void:
 	var anim: Dictionary = _console.get("animations", {}).get("highlight" if near_console else "idle", {})
 	_console_sprite.frame = int(anim.get("row", 0)) * 6 + int(_time * float(anim.get("fps", 4))) % int(anim.get("frames", 6))
 	_send_crew(delta)
+	_lighting.update(_time, _all_ready(), HangarDecor.beat(_time) if radio.get("on", false) else 0.0)
 	queue_redraw()
 	_glow.queue_redraw()
 	_fx.queue_redraw()
@@ -272,9 +301,10 @@ func _find_target(feet: Vector2) -> Dictionary:
 	var held := str(carried.get(_me, ""))
 	var best := {}
 	var best_d := INF
+	var near_rocket := _rocket_rect().grow(float(_layout.get("rocket", {}).get("reach", 12))).has_point(feet)
 	if held != "":
-		if _bay_zone().has_point(feet):
-			return {kind = "install", part = held}
+		if near_rocket:
+			return {kind = "rocket"}
 		for s: Dictionary in _layout.get("shelf_slots", []):
 			if s.part_id == held and feet.distance_to(_v(s)) <= float(s.interact_radius):
 				return {kind = "return", part = held}
@@ -284,15 +314,8 @@ func _find_target(feet: Vector2) -> Dictionary:
 		if d <= float(s.interact_radius) and d < best_d:
 			best_d = d
 			best = {kind = "take", part = str(s.part_id)}
-	if _bay_zone().has_point(feet):
-		var cells := _preview.upgrade_cells()
-		var ups: Array = design.get("upgrades", [])
-		for i in mini(ups.size(), cells.size()):
-			var c := _preview.position + cells[i] + Vector2(6, 6)
-			var d := feet.distance_to(c)
-			if d <= BAY_REACH and d < best_d:
-				best_d = d
-				best = {kind = "remove", part = str(ups[i])}
+	if near_rocket and best.is_empty():
+		best = {kind = "rocket"}
 	for st: Dictionary in _layout.get("class_stands", []):
 		var d := feet.distance_to(_v(st))
 		if d <= float(st.interact_radius) and d < best_d:
@@ -301,9 +324,21 @@ func _find_target(feet: Vector2) -> Dictionary:
 	var cp := _console_use_point()
 	if feet.distance_to(cp) <= CONSOLE_REACH and feet.distance_to(cp) < best_d:
 		best = {kind = "console"}
+	var rd := feet.distance_to(HangarDecor.RADIO_USE)
+	if rd <= HangarDecor.RADIO_REACH and rd < best_d:
+		best = {kind = "radio"}
 	if _door_zone().has_point(feet):
 		best = {kind = "ready"}
 	return best
+
+
+func _all_ready() -> bool:
+	if roles.is_empty():
+		return false
+	for id in roles:
+		if not ready_by.get(id, false):
+			return false
+	return true
 
 
 func _same_target(a: Dictionary, b: Dictionary) -> bool:
@@ -328,19 +363,8 @@ func _use(t: Dictionary) -> void:
 		"return":
 			_send({type = "return"})
 			Sfx.play("clank", 0.9)
-		"install":
-			var reason := DesignRules.check_add(design, str(t.part))
-			if reason != "":
-				_deny(reason)
-			else:
-				_send({type = "install"})
-				Sfx.play("toggle")
-		"remove":
-			if not CrewRoles.has(roles.get(_me, "all"), DesignRules.part(str(t.part)).get("role", "")):
-				_deny("ONLY %s CAN TAKE THAT OFF" % CrewRoles.tag(DesignRules.part(str(t.part)).get("role", "")))
-			else:
-				_send({type = "remove", part = str(t.part)})
-				Sfx.play("clank", 1.1)
+		"rocket":
+			_open_board()
 		"class":
 			if design.ship_class != t.id:
 				_send({type = "class", id = str(t.id)})
@@ -355,7 +379,10 @@ func _use(t: Dictionary) -> void:
 				_send({type = "ready"})
 				Sfx.play("ui_click")
 		"hint":
-			_deny("INSTALL IT ON THE BAY OR PUT IT BACK ON ITS SHELF")
+			_deny("TAKE IT TO THE ROCKET OR PUT IT BACK ON ITS SHELF")
+		"radio":
+			_send({type = "radio"})
+			Sfx.play("toggle")
 
 
 ## Why the ship can't launch yet ("" = it can).
@@ -370,6 +397,8 @@ func _ready_problem() -> String:
 
 func _deny(text: String) -> void:
 	_say(text)
+	if _board:
+		_board.say(text)
 	Sfx.play("denied")
 
 
@@ -418,6 +447,42 @@ func _close_planner() -> void:
 	Sfx.play("undock")
 
 
+func _overlay_open() -> bool:
+	return _planner != null or _board != null
+
+
+## The rocket board: full-screen overlay; the player stands at the rocket meanwhile.
+func _open_board() -> void:
+	if _board:
+		return
+	_board_layer = CanvasLayer.new()
+	_board_layer.layer = 15
+	add_child(_board_layer)
+	_board = RocketBoard.new()
+	_board.rocket_name = str(_rocket_info().get("name", ""))
+	_board.design = design
+	_board.held = str(carried.get(_me, ""))
+	_board.request.connect(_send)
+	_board.close_requested.connect(_close_board)
+	_board_layer.add_child(_board)
+	_card_target = {}
+	_local.set_physics_process(false)
+	_local.velocity = Vector2.ZERO
+	_local._facing = Vector2.UP
+	_local._animate(false, "work_up")
+	Sfx.play("dock")
+
+
+func _close_board() -> void:
+	if _board_layer:
+		_board_layer.queue_free()
+	_board = null
+	_board_layer = null
+	if _local:
+		_local.set_physics_process(true)
+	Sfx.play("undock")
+
+
 # --- host logic --------------------------------------------------------------------------
 
 func _host_apply(peer: int, action: Dictionary) -> void:
@@ -441,22 +506,25 @@ func _host_apply(peer: int, action: Dictionary) -> void:
 			c[peer] = part
 		"return":
 			c.erase(peer)
-		"install":
-			var part := str(c.get(peer, ""))
-			if part == "":
+		"cell":   # rocket board: install / swap / take out (anyone, any part)
+			var cell := int(action.get("cell", -1))
+			var cells := DesignRules.cells_of(d)
+			if cell < 0 or cell >= cells.size():
 				return
-			var reason := DesignRules.check_add(d, part)
-			if reason != "":
-				_tell(peer, reason)
+			var hand := str(c.get(peer, ""))
+			var there := str(cells[cell])
+			if hand == "" and there == "":
 				return
-			d.upgrades.append(part)
-			c.erase(peer)
-		"remove":
-			var part := str(action.get("part", ""))
-			if c.has(peer) or not part in d.upgrades or not CrewRoles.has(role, DesignRules.part(part).get("role", "")):
-				return
-			d.upgrades.erase(part)
-			c[peer] = part
+			if hand != "":
+				var reason := DesignRules.check_put(d, cell, hand)
+				if reason != "":
+					_tell(peer, reason)
+					return
+			d = DesignRules.put(d, cell, hand)
+			if there != "":
+				c[peer] = there
+			else:
+				c.erase(peer)
 		"class":
 			if str(action.get("id", "")) in DesignRules.class_ids():
 				d = DesignRules.set_class(d, str(action.id))   # parts that don't fit go back to the shelf
@@ -469,6 +537,10 @@ func _host_apply(peer: int, action: Dictionary) -> void:
 		"speed":
 			if nav and str(action.get("speed", "")) in LaunchWindow.ORDER:
 				p.speed = str(action.speed)
+		"radio":   # anyone; switching on tunes to the next track; never un-readies
+			var on := not bool(radio.get("on", false))
+			var track := int(radio.get("track", 0))
+			radio = {on = on, track = (track + 1) % Radio.TRACKS.size() if on else track}
 		"ready":
 			if r.get(peer, false):
 				r.erase(peer)
@@ -500,7 +572,7 @@ func _broadcast() -> void:
 
 
 func _state() -> Dictionary:
-	return {design = design, plan = plan, ready_by = ready_by, carried = carried}
+	return {design = design, plan = plan, ready_by = ready_by, carried = carried, radio = radio}
 
 
 func _apply_state(state: Dictionary) -> void:
@@ -508,9 +580,18 @@ func _apply_state(state: Dictionary) -> void:
 	plan = state.get("plan", plan)
 	ready_by = state.get("ready_by", {})
 	carried = state.get("carried", {})
+	radio = state.get("radio", radio)
+	if _radio_audio:
+		_radio_audio.tune(bool(radio.get("on", false)), int(radio.get("track", 0)))
+	if _radio_set:
+		_radio_set.on = bool(radio.get("on", false))
 	_preview.design = design
+	_place_rocket()
 	if _planner:
 		_planner.show_plan(design, plan)
+	if _board:
+		_board.rocket_name = str(_rocket_info().get("name", ""))
+		_board.show_state(design, str(carried.get(_me, "")))
 
 
 func _check_launch() -> void:
@@ -612,6 +693,7 @@ func _launch(final_design: Dictionary) -> void:
 		return
 	_launching = true
 	_close_planner()
+	_close_board()
 	DesignRules.chosen = final_design.duplicate(true)
 	Sfx.play("burn")
 	_say("ALL READY - TO THE LAUNCH PAD")
@@ -633,9 +715,18 @@ func _draw() -> void:
 		if tex:
 			var bin := _rect(s.bin)
 			draw_texture(tex, (bin.position + ((bin.size - tex.get_size()) / 2.0).floor()).floor())
+	var rocket := DesignRules.texture(str(_rocket_info().get("sprite", "")))
+	if rocket:
+		var rr := _rocket_rect()
+		draw_rect(Rect2(rr.position.x + 4, rr.end.y - 2, rr.size.x, 3), Color(0, 0, 0, 0.3))   # shadow on the mount
+		draw_texture(rocket, rr.position)
+		if _target.get("kind", "") == "rocket" or _board:
+			var o := _opening_rect()
+			draw_rect(o.grow(1), Color(UiKit.GOOD, 0.45 + 0.3 * sin(_time * 5.0)), false, 1.0)
 	_draw_stands()
 	_draw_board()
 	_draw_door()
+	HangarLighting.draw_beacon(self, _time, _all_ready())
 
 
 func _draw_stands() -> void:
@@ -677,8 +768,10 @@ func _draw_board() -> void:
 		_sign(Vector2(vr.position.x, vr.end.y), str(row[1]), col if col == UiKit.BAD else Color.WHITE)
 	var rr := _rect(f.get("rocket", {}))
 	var launcher: Dictionary = ev.launcher
-	var rname := "NONE" if launcher.is_empty() else str(launcher.get("id", "")).to_upper()
-	_sign(Vector2(rr.position.x, rr.end.y), rname, UiKit.BAD if launcher.is_empty() else Color.WHITE)
+	var rname := str(_rocket_info().get("name", "NONE"))
+	var lifts: bool = not launcher.is_empty() and ev.mass <= float(launcher.capacity_kg) * DesignRules.LIFT_MARGIN
+	var rw := UiFont.font().get_string_size(rname, HORIZONTAL_ALIGNMENT_LEFT, -1, SIGN_PX).x
+	_sign(Vector2(rr.get_center().x - roundf(rw / 2.0), rr.end.y), rname, Color.WHITE if lifts else UiKit.BAD)
 
 
 ## Board text in the map's fixed boxes (right = `pos` is the right edge).
@@ -717,8 +810,9 @@ func _draw_glow() -> void:
 	var ok := DesignRules.check_add(design, held) == ""
 	col.a = (0.55 + 0.4 * sin(_time * 6.0)) if ok else 0.25
 	var cells := _preview.upgrade_cells()
-	for i in range(design.upgrades.size(), cells.size()):
-		if tex:
+	var filled := DesignRules.cells_of(design)
+	for i in mini(cells.size(), filled.size()):
+		if tex and str(filled[i]) == "":
 			_glow.draw_texture(tex, _preview.position + cells[i] + off, col)
 
 
@@ -734,22 +828,44 @@ func _draw_fx() -> void:
 			var at := m.position + carry_off - Vector2(floorf(tex.get_width() / 2.0), tex.get_height())
 			_fx.draw_texture(tex, at.round())
 	_draw_console_screen()
-	if _local and _planner == null and not _launching:
+	_draw_now_playing()
+	if _local and not _overlay_open() and not _launching:
 		_draw_prompt()
 
 
-## The console's screen shows whether the plan works (green / amber / red edge) and a tag with it.
+## Track title over the radio: for a few seconds after it changes, and while you stand at it.
+func _draw_now_playing() -> void:
+	var title := _radio_audio.now_playing() if _radio_audio else ""
+	if title == "" or not _radio_audio.showing() or _target.get("kind", "") == "radio":   # at the set: the prompt names it
+		return
+	var label := "~ " + title.to_upper() + " ~"
+	var f := UiFont.font()
+	var w := ceilf(f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, SIGN_PX).x) + 4
+	var x := roundf(clampf(_radio_set.position.x - w / 2.0, 4.0, 476.0 - w))
+	var r := Rect2(x, _radio_set.position.y - 32, w, 7)
+	var col := Color("ff9ac8")
+	_fx.draw_rect(r, Color(UiKit.INK, 0.85))
+	_fx.draw_rect(r, Color(col, 0.6), false, 1.0)
+	_fx.draw_string(f, Vector2(r.position.x + 2, r.end.y - 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, SIGN_PX, col)
+
+
+## The console's screen shows whether the plan works (green / amber / red edge) and a small sign above it
+## (path, date, tank burn). Fixed SIGN_PX like the board, so TEXT SIZE can't push it over the crates.
 func _draw_console_screen() -> void:
 	var e := LaunchWindow.evaluate(design, plan)
 	var col := UiKit.GOOD if e.fuel_cost <= 0.5 else (UiKit.WARN if e.ok else UiKit.BAD)
 	var sr := _rect(_console.get("screen_rect", {}))
 	sr.position += CONSOLE_FEET - _arr(_console.get("anchor", [24, 43]))
 	_fx.draw_rect(sr.grow(1), Color(col, 0.5 + 0.3 * sin(_time * 3.0)), false, 1.0)
-	var label := "%s %s  -%d%% FUEL" % [str(e.path.name), str(e.date).substr(2), ceili(e.fuel_cost)]
-	var w := UiKit.text_w(label, 6) + 6
-	var r := Rect2(roundf(clampf(CONSOLE_FEET.x - w / 2.0, 4.0, 476.0 - w)), sr.position.y - 12, roundf(w), 9)
-	UiKit.panel(_fx, r, UiKit.PANEL_DARK, col)
-	UiKit.text(_fx, Vector2(r.position.x + 3, r.end.y - 2), label, 6, col, 0)
+	var path := "STD" if str(e.path.name) == "STANDARD" else str(e.path.name)
+	var label := "%s %s %d%%" % [path, str(e.date).substr(2), ceili(e.fuel_cost)]
+	var f := UiFont.font()
+	var w := ceilf(f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, SIGN_PX).x) + 4
+	var x := roundf(clampf(sr.get_center().x - w / 2.0, 4.0, 476.0 - w))
+	var r := Rect2(x, sr.position.y - 9, w, 7)
+	_fx.draw_rect(r, Color(UiKit.INK, 0.85))
+	_fx.draw_rect(r, Color(col, 0.6), false, 1.0)
+	_fx.draw_string(f, Vector2(r.position.x + 2, r.end.y - 1), label, HORIZONTAL_ALIGNMENT_LEFT, -1, SIGN_PX, col)
 
 
 ## Key cap + verb over the local player's head for what SPACE would do.
@@ -772,15 +888,14 @@ func _draw_prompt() -> void:
 				if not ok:
 					verb = "NOT YOUR SHELF"
 		"return": verb = "PUT BACK"
-		"install":
-			var reason := DesignRules.check_add(design, str(t.part))
-			verb = "INSTALL" if reason == "" else reason
-			ok = reason == ""
-		"remove": verb = "TAKE OFF"
+		"rocket": verb = "OPEN ROCKET BOARD"
 		"class":
 			ok = design.ship_class != t.id
 			verb = ("SWITCH TO " + str(DesignRules.class_info(t.id).get("name", "")).to_upper()) if ok else "SELECTED"
 		"console": verb = "PLAN LAUNCH"
+		"radio":
+			var song := _radio_audio.now_playing() if _radio_audio else ""
+			verb = ("RADIO OFF  ~ %s ~" % song.to_upper()) if song != "" else "RADIO ON"
 		"ready":
 			verb = "NOT READY" if ready_by.get(_me, false) else "READY"
 			ok = ready_by.get(_me, false) or _ready_problem() == ""
@@ -791,7 +906,7 @@ func _draw_prompt() -> void:
 		top.y -= 14
 	var cap := UiKit.keycap_size("SPACE", 6)
 	var vw := UiKit.text_w(verb, 6)
-	var info: bool = t.kind in ["take", "remove", "install", "return", "class", "console", "ready"]
+	var info: bool = t.kind in ["take", "return", "rocket", "class", "console", "ready"]
 	var fw := UiKit.keycap_size("F", 6).x + 2 + UiKit.text_w("INFO", 6) + 6 if info else 0.0
 	var total := cap.x + 2 + vw + fw
 	var x := roundf(clampf(top.x - total / 2.0, 4.0, 476.0 - total))
@@ -810,7 +925,7 @@ func _draw_prompt() -> void:
 
 func _draw_ui() -> void:
 	_draw_footer()
-	if not _card_target.is_empty() and _planner == null:
+	if not _card_target.is_empty() and not _overlay_open():
 		_draw_card(_card_target)
 
 
@@ -886,7 +1001,7 @@ func _layout_rows(body: Array, origin: Vector2, draw: bool) -> float:
 func _card_rows(t: Dictionary, inner: float) -> Array:
 	var rows: Array = []
 	match str(t.kind):
-		"take", "remove", "install", "return":
+		"take", "return":
 			var id := str(t.part)
 			var p := DesignRules.part(id)
 			var role := str(p.get("role", ""))
@@ -903,16 +1018,28 @@ func _card_rows(t: Dictionary, inner: float) -> Array:
 				rows.append({text = lines[i], size = 6, col = UiKit.DIM, clear = i == 0, gap = 3.0 if i == 0 else 0.0})
 			var status := "FITTED ON THE SHIP" if id in design.upgrades else DesignRules.check_add(design, id)
 			if status == "":
-				status = "FITS - CARRY IT TO THE BAY"
+				status = "FITS - CARRY IT TO THE ROCKET"
 			rows.append({text = UiKit.fit(status, 6, inner), size = 6, clear = true, gap = 3.0,
 					col = UiKit.GOOD if status.begins_with("F") else UiKit.BAD})
 		"class":
 			var cls := DesignRules.class_info(str(t.id))
 			rows.append({text = "%s SHIP" % str(cls.get("name", "")).to_upper()})
+			var rk := DesignRules.rocket_for(str(t.id))
+			var rk_name := str(_layout.get("rocket", {}).get("types", {}).get(str(rk.get("id", "")), {}).get("name", ""))
 			for line in ["UPGRADE SLOTS: %d" % cls.get("upgrade_slots", 0), "EMPTY MASS: %d KG" % cls.get("dry_mass_kg", 0),
-					"MASS LIMIT: %d KG" % cls.get("mass_limit_kg", 0), "PRICE: $%dM" % cls.get("cost", 0)]:
-				rows.append({text = line, size = 6, col = UiKit.TEXT})
-			_dim_rows(rows, "Switching drops the parts that no longer fit back on their shelves.", inner)
+					"MASS LIMIT: %d KG" % cls.get("mass_limit_kg", 0), "PRICE: $%dM" % cls.get("cost", 0),
+					"ROCKET: %s (LIFTS %d KG, $%dM)" % [rk_name, int(float(rk.get("capacity_kg", 0)) * DesignRules.LIFT_MARGIN), int(rk.get("cost", 0))]]:
+				rows.append({text = UiKit.fit(line, 6, inner), size = 6, col = UiKit.TEXT})
+			_dim_rows(rows, "Switches ship AND rocket. You fetch the parts yourselves; ones that no longer fit go back on their shelves.", inner)
+		"rocket":
+			var ev := DesignRules.evaluate(design)
+			var rk: Dictionary = ev.launcher
+			var lift := int(float(rk.get("capacity_kg", 0)) * DesignRules.LIFT_MARGIN)
+			rows.append({text = "%s ROCKET" % str(_rocket_info().get("name", ""))})
+			for line in ["CARRIES: %s SHIP" % str(DesignRules.class_info(design.ship_class).get("name", "")).to_upper(),
+					"LIFTS: %d KG (10%% MARGIN)" % lift, "SHIP NOW: %d KG" % ev.mass, "PRICE: $%dM" % int(rk.get("cost", 0))]:
+				rows.append({text = UiKit.fit(line, 6, inner), size = 6, col = UiKit.TEXT if ev.mass <= lift or not line.begins_with("SHIP") else UiKit.BAD})
+			_dim_rows(rows, "SPACE opens the board inside the fairing: put the part in your hand into any cell, or swap one out.", inner)
 		"console":
 			var e := LaunchWindow.evaluate(design, plan)
 			rows.append({text = "LAUNCH WINDOW PLANNER"})
@@ -954,8 +1081,38 @@ func _part_tex(part: String, slot := {}) -> Texture2D:
 	return tex
 
 
-func _bay_zone() -> Rect2:
-	return _rect(_layout.get("assembly", {}))
+## Layout info of the rocket that flies the current class (sprite, size, opening).
+func _rocket_info() -> Dictionary:
+	var id := str(DesignRules.rocket_for(str(design.get("ship_class", "balanced"))).get("id", "medium"))
+	return _layout.get("rocket", {}).get("types", {}).get(id, {})
+
+
+## The rocket sprite's rect on the map: cylinder centred on center_x, base on bottom_y.
+func _rocket_rect() -> Rect2:
+	var r: Dictionary = _layout.get("rocket", {})
+	var i := _rocket_info()
+	var w := float(i.get("w", 0))
+	var h := float(i.get("h", 0))
+	var x := float(r.get("center_x", 240)) - (float(i.get("cyl_x", 0)) + floorf(float(i.get("cyl_w", 0)) / 2.0))
+	return Rect2(x, float(r.get("bottom_y", 160)) - h, w, h)
+
+
+func _opening_rect() -> Rect2:
+	var o := _rect(_rocket_info().get("opening", {}))
+	o.position += _rocket_rect().position
+	return o
+
+
+## Moves the folded ship into the rocket's opening and sizes the rocket's collision.
+func _place_rocket() -> void:
+	var o := _opening_rect()
+	# ShipPreview: body centre at (80, 62) of its box; the folded stack (dish + body) is centred 9 px higher.
+	_preview.position = (o.get_center() - Vector2(ShipPreview.SIZE.x / 2, ShipPreview.SIZE.y / 2 - 2) + Vector2(0, 9)).floor()
+	if _rocket_shape:
+		var r := _rocket_rect()
+		var top := maxf(r.position.y, 40.0)          # the nose may poke above the walkable floor
+		(_rocket_shape.shape as RectangleShape2D).size = Vector2(r.size.x, r.end.y - top)
+		_rocket_shape.position = Vector2(r.get_center().x, (top + r.end.y) / 2.0)
 
 
 func _door_zone() -> Rect2:

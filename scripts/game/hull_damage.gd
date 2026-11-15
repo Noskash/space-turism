@@ -57,7 +57,9 @@ func _exit_tree() -> void:
 func _on_state(state: Dictionary) -> void:
 	var was := breaches.size()
 	breaches = state.get("breaches", [])
-	toolboxes = state.get("toolboxes", [])
+	# Dropped items: toolboxes only (extinguishers on the floor belong to ShipFire).
+	toolboxes = state.get("toolboxes", []).filter(
+			func(t: Dictionary) -> bool: return t.get("kind", "toolbox") == "toolbox")
 	oxygen = float(state.get("oxygen", 100.0))
 	if breaches.size() > was:
 		Sfx.play("explode", 1.3, -4.0)
@@ -187,13 +189,16 @@ func _draw() -> void:
 	if not near.is_empty():
 		at = Vector2(near.x, near.y) + Vector2(0, -14)
 		text = "HOLD SPACE: PATCH" if me.has_toolbox else "NEED A TOOLBOX (CARGO / ENGINE RM)"
-	elif not me.has_toolbox and not toolbox_near(me.global_position).is_empty():
+	elif not me.has_toolbox and not me.has_extinguisher and not toolbox_near(me.global_position).is_empty():
 		var t := toolbox_near(me.global_position)
 		at = Vector2(t.x, t.y) + Vector2(0, -8)
 		text = "SPACE: PICK UP TOOLBOX"
 	elif locker_in_reach(me.global_position) >= 0:
 		at = LOCKERS[locker_in_reach(me.global_position)] + Vector2(0, -12)
-		text = "SPACE: PUT TOOLBOX BACK" if me.has_toolbox else "SPACE: TAKE TOOLBOX"
+		if me.has_extinguisher:
+			text = "NEED A TOOLBOX - HANDS FULL (SPACE: DROP)"
+		else:
+			text = "SPACE: PUT TOOLBOX BACK" if me.has_toolbox else "SPACE: TAKE TOOLBOX"
 		draw_arc(LOCKERS[locker_in_reach(me.global_position)] + Vector2(0, 6), 9.0, 0, TAU, 20,
 				Color(1, 0.6, 0.3, 0.6 + 0.4 * sin(_t * 6.0)), 1.0)
 	if text != "":

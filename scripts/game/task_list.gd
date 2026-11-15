@@ -5,7 +5,8 @@ extends RefCounted
 ## role: role stripe + icon, title, countdown segments (repairs blink FIX instead).
 ## Rows of the local player's roles are bright, other crew's rows dimmer. A finished row gets a
 ## green strike-through + tick and stays LINGER s; a missed one (station knocked offline, science
-## window ran out) a red one. TAB folds the list to its header with one chip per task.
+## window ran out) a red one. TAB folds the list to its header with one chip per task (a third press hides
+## the whole top HUD, see hud.gd).
 ## Reads only state dictionaries (Events.state_changed), so every co-op peer sees the same list.
 
 const LINGER := 1.6
@@ -17,15 +18,24 @@ var collapsed := false
 ## Local player's role string ("navigator+engineer", "all", "" = sees everything as own).
 var mine := "all"
 
-var _rows: Array[Dictionary] = []  # {id, role, title, kind, repair, time_left, duration, status, left}
+var _rows: Array[Dictionary] = []  # {id, role, title, kind, repair, time_left, duration, status, left, grade}
 var _prev_offline: Array = []
 var _juice := UiJuice.new()
 var _first := true
+var _streak := 0                    # state.grades.streak: tickets done in time in a row (header "xN")
+var _grade_of := {}                 # ticket id -> "perfect" | "good" | "late" (state.grade_log)
+const GRADE_WORDS := {perfect = ["PERFECT", UiKit.WARN], good = ["GOOD", UiKit.GOOD], late = ["LATE", Color("ff9a3c")]}
 
 
 func update(state: Dictionary) -> void:
 	var events: Array = state.get("events", [])
 	var offline: Array = state.get("offline", [])
+	for g: Dictionary in state.get("grade_log", []):
+		_grade_of[int(g.id)] = str(g.grade)
+	var streak := int(state.get("grades", {}).get("streak", 0))
+	if streak > _streak and not _first:
+		_juice.kick("streak", 0.35)
+	_streak = streak
 	var now := {}
 	for e: Dictionary in events:
 		now[int(e.id)] = e
@@ -67,6 +77,14 @@ func step(delta: float) -> void:
 
 func open_count() -> int:
 	return _rows.filter(func(r: Dictionary) -> bool: return r.status == "open").size()
+
+
+## Any open task close to running out (the hidden-HUD tab blinks).
+func has_urgent() -> bool:
+	for row in _rows:
+		if row.status == "open" and _urgent(row):
+			return true
+	return false
 
 
 func toggle() -> void:
@@ -133,6 +151,11 @@ func _draw_header(ci: CanvasItem, r: Rect2, head_h: float) -> void:
 	x += UiKit.text_w(str(n) + " ", 7)
 	var cap := UiKit.keycap_size("TAB", 6)
 	UiKit.keycap(ci, Vector2(r.end.x - cap.x - 4, r.position.y + roundf((head_h - cap.y) / 2.0) + 2), "TAB", 6)
+	if _streak >= 2 and not collapsed:   # tickets done in time in a row
+		var label := "x%d" % _streak
+		var hop := _juice.bounce("streak", 2.0)
+		var sx := r.end.x - cap.x - 8 - UiKit.text_w(label, 7)
+		UiKit.text(ci, Vector2(roundf(sx), base + hop), label, 7, Color.WHITE if _juice.flash("streak") else UiKit.WARN)
 	if collapsed:
 		# One chip per open task.
 		for row: Dictionary in _rows:
@@ -166,6 +189,9 @@ func _draw_row(ci: CanvasItem, rr: Rect2, row: Dictionary) -> void:
 		icon_col = UiKit.BAD
 	elif row.kind == "dust":
 		icon_name = "debris"
+	elif row.kind == "fire":
+		icon_name = "fire"
+		icon_col = Color.WHITE   # the fire icon keeps its own colours
 	if row.status == "done":
 		icon_name = "check"
 		icon_col = UiKit.GOOD
@@ -177,7 +203,12 @@ func _draw_row(ci: CanvasItem, rr: Rect2, row: Dictionary) -> void:
 	# Timer on the right: 4 segments, or a blinking FIX for repairs.
 	var timer_w := maxf(17.0, UiKit.text_w("FIX", TITLE_SIZE) + 1) if row.repair and open else 17.0
 	var tx := rr.end.x - timer_w - 2
-	if open and row.repair:
+	if row.status == "done" and _grade_of.has(row.id):   # how well it went
+		var word: Array = GRADE_WORDS.get(_grade_of[row.id], ["", UiKit.DIM])
+		timer_w = UiKit.text_w(word[0], 6) + 2
+		tx = rr.end.x - timer_w - 2
+		UiKit.text_r(ci, rr.end.x - 3, rr.end.y - 2, word[0], 6, word[1])
+	elif open and row.repair:
 		if _juice.blink(0.6):
 			UiKit.text_r(ci, rr.end.x - 3, rr.end.y - 2, "FIX", TITLE_SIZE, UiKit.BAD)
 	elif open and row.duration > 0.0 and row.time_left >= 0.0:

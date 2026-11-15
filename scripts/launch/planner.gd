@@ -59,6 +59,17 @@ var _message_time := 0.0
 var _going := false
 var _hold := 0.0                 # key repeat timer for the date
 var _dragging := false
+# Explanation text at the bottom of the numbers panel scrolls when it does not fit (bigger TEXT SIZE,
+# long orbit texts): mouse wheel over the panel, otherwise it steps down a line at a time by itself.
+const NUMBERS := Rect2(262, 16, 212, 186)
+const SCROLL_PAUSE := 2.5        # s at the top / bottom before auto-scroll moves on
+const SCROLL_STEP := 1.3         # s per line while auto-scrolling
+const SCROLL_IDLE := 6.0         # s after a wheel scroll before auto-scroll takes over again
+var _desc_text := ""             # what is shown; a new text starts at the top
+var _desc_over := 0              # lines that do not fit (0 = no scrolling)
+var _desc_line := 0              # first visible line
+var _desc_wait := SCROLL_PAUSE   # auto-scroll countdown to the next step
+var _desc_idle := SCROLL_IDLE    # time since the last wheel scroll
 var _stars: Array[Vector3] = []
 
 
@@ -136,6 +147,7 @@ func _can_drive(peer: int) -> bool:
 func _process(delta: float) -> void:
 	_time += delta
 	_message_time = maxf(_message_time - delta, 0.0)
+	_auto_scroll(delta)
 	if not _going and not Tutorial.is_blocking():
 		_handle_keys(delta)
 	queue_redraw()
@@ -179,6 +191,11 @@ func _handle_keys(delta: float) -> void:
 
 func _input(event: InputEvent) -> void:
 	if _going or Tutorial.is_blocking():
+		return
+	if event is InputEventMouseButton and event.pressed and NUMBERS.has_point(get_local_mouse_position()) 			and event.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+		_desc_line = clampi(_desc_line + (1 if event.button_index == MOUSE_BUTTON_WHEEL_DOWN else -1), 0, _desc_over)
+		_desc_idle = 0.0
+		_desc_wait = SCROLL_PAUSE
 		return
 	var click: bool = event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT
 	if click and not event.pressed:
@@ -327,7 +344,7 @@ func _draw() -> void:
 	_text_right(Vector2(472, 11), "SIMPLIFIED PHYSICS   H: HELP", DIM)
 	_panel(Rect2(6, 16, 250, 186))
 	_draw_orbits(e)
-	_draw_numbers(Rect2(262, 16, 212, 186), e)
+	_draw_numbers(NUMBERS, e)
 	_draw_chart(Rect2(6, 204, 468, 44), e)
 	_draw_footer()
 
@@ -472,9 +489,9 @@ func _draw_numbers(r: Rect2, e: Dictionary) -> void:
 		_text(Vector2(x, y), "MARS ORBIT", DIM)
 		_text_right(Vector2(x + w, y), "%s  [SPACE]" % str(o.get("name", "")), CYAN)
 		y += _step(10)
-		_wrapped(Vector2(x, y), str(o.get("desc", "")), w, DIM, r.end.y - 3)
+		_scrolled(Vector2(x, y), str(o.get("desc", "")), w, DIM, r.end.y - 3)
 		return
-	_wrapped(Vector2(x, y), str(e.path.desc) + " Launch tank assumed full; the climb to orbit uses some (launch pad).",
+	_scrolled(Vector2(x, y), str(e.path.desc) + " Launch tank assumed full; the climb to orbit uses some (launch pad).",
 			w, DIM, r.end.y - 3)
 
 
@@ -574,6 +591,50 @@ func _wrapped(pos: Vector2, text: String, width: float, color: Color, max_y := I
 			_text(Vector2(pos.x, y), line, color)
 			y += _step(9)
 	return y
+
+
+## Like _wrapped, but scrolls (from _desc_line) when the text is taller than the space down to `max_y`,
+## with a thin scrollbar on the right edge of the panel.
+func _scrolled(pos: Vector2, text: String, width: float, color: Color, max_y: float) -> void:
+	var lines := PackedStringArray()
+	for l in UiKit.wrap(text, FONT_SIZE, width - 4):
+		if l != "":
+			lines.append(l)
+	if text != _desc_text:
+		_desc_text = text
+		_desc_line = 0
+		_desc_wait = SCROLL_PAUSE
+	var step := _step(9)
+	var fit := maxi(int(floorf((max_y - pos.y) / step)) + 1, 1)
+	_desc_over = maxi(lines.size() - fit, 0)
+	_desc_line = clampi(_desc_line, 0, _desc_over)
+	var y := pos.y
+	for i in range(_desc_line, mini(_desc_line + fit, lines.size())):
+		_text(Vector2(pos.x, y), lines[i], color)
+		y += step
+	if _desc_over > 0:
+		var top := pos.y - step + 3
+		var track := Rect2(NUMBERS.end.x - 4, top, 2, max_y + 3 - top)
+		draw_rect(track, Color(LINE, 0.6))
+		var h := maxf(roundf(track.size.y * float(fit) / float(lines.size())), 4.0)
+		var at := roundf((track.size.y - h) * float(_desc_line) / float(_desc_over))
+		draw_rect(Rect2(track.position.x, track.position.y + at, 2, h), CYAN)
+
+
+## Steps the explanation down a line at a time, pauses at the bottom, then jumps back to the top.
+func _auto_scroll(delta: float) -> void:
+	_desc_idle += delta
+	if _desc_over <= 0 or _desc_idle < SCROLL_IDLE:
+		return
+	_desc_wait -= delta
+	if _desc_wait > 0.0:
+		return
+	if _desc_line >= _desc_over:
+		_desc_line = 0
+		_desc_wait = SCROLL_PAUSE
+	else:
+		_desc_line += 1
+		_desc_wait = SCROLL_PAUSE if _desc_line >= _desc_over else SCROLL_STEP
 
 
 ## A vertical gap that grows a bit with TEXT SIZE (not fully, so the panels still fit).

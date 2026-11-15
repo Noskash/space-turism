@@ -60,7 +60,8 @@ Flow: level select → lobby → **Designer** → cruise (`game.tscn`). Mars' Le
   NAV / PWR / COM / SCI reachable only by players holding that role (`CrewRoles`). One shared pool of
   slots, mass, power and budget, so roles compete. Launch when all players are READY and the ship
   has no errors; any change un-readies everyone.
-- Rocket = cheapest launcher that lifts the ship's mass; its price comes out of the budget.
+- Rocket = the class's rocket (`DesignRules.CLASS_ROCKET`: light->Electron, balanced->Zenit, heavy->Proton); its price
+  comes out of the budget. Too heavy for it (> capacity x 0.9) = error "ROCKET CAN'T LIFT" -> no launch.
 - Power can go negative (allowed, shown red): the battery then drains in cruise — that is the lesson.
 - `DesignRules` (`scripts/design/design_rules.gd`): totals, limits, `check_add`, `mission_params(design)`.
   Numbers: `data/design_stats.json` (first guesses, not balanced). Art/slots: asset JSONs.
@@ -73,21 +74,46 @@ Flow: level select → lobby → **Designer** → cruise (`game.tscn`). Mars' Le
 ## Assembly hangar hub (built 2026-11-15, `scenes/design/hangar.tscn`, `scripts/design/hangar.gd`)
 Flow now: level select / MissionSelect → lobby → **Hangar** → launch pad → cruise (launch "D = redesign", report and game
 over also return here). The menu Designer (`designer.tscn` → `planner.tscn`) still works but nothing points at it.
-- Map, collision, shelves, bay, stands, board, door: `sprites/hangar_assets/hangar_layout.json`. Crew = `CrewMember` with
+- Map, collision, shelves, bay, plates, board, door, rocket: `sprites/hangar_assets/hangar_layout.json`. Crew = `CrewMember` with
   `world_actions = false` (no hull/radio). Overlay (gantry) drawn above the crew.
 - SPACE at your role's shelf = pick the part up (drawn over your head); F = info card (9-slice `info_card.png`).
-  SPACE on the bay installs (`DesignRules.check_add`, free cells glow in the part's role colour); SPACE next to a fitted
-  part's cell takes it off (owner role only); SPACE at its shelf puts it back. A part is on its shelf when it is neither
-  installed nor carried, so shelves have no state. SPACE at a class stand switches class (extra parts drop back).
+  SPACE at its shelf puts it back. A part is on its shelf when it is neither installed nor carried, so shelves have no state.
+- **Rocket on the bay** (built 2026-11-15, replaced the cradle plate): the class's rocket rises out of a **launch silo**
+  (elliptical hole in the bay deck, Factorio-style; `rocket.silo {x,y,rx,ry}`, also an obstacle), fairing door open, the
+  folded ship (`ShipPreview.folded` = no wings / boom / engine) inside; art
+  `sprites/hangar_assets/rockets/bay_<light|medium|heavy>.png` from `draw_hangar.py`, layout
+  `rocket {center_x, bottom_y, reach, silo, front, types{w,h,cyl_x,cyl_w,opening,name}}`. `front`
+  (`maps/hangar_silo_front_480x270.png`) = the deck in front of the hole, drawn over the rocket so its base sinks in.
+  `hangar_layout.json` is generator output: regenerate it, don't hand-edit (hand edits drifted the NAV bins once).
+  Its rect is a wall (resized per class). SPACE near it opens **`RocketBoard`** (`scripts/design/rocket_board.gd`, CanvasLayer 15,
+  full screen): the body drawn big (`ShipPreview.bare`, integer scale), the part in hand rides a cell cursor (WASD /
+  mouse); SPACE / click = install, swap (old part into your hand, any role's part) or take out. Host action
+  `{type = "cell", cell}`. Positions live in `design.cells` (`DesignRules.cells_of / put / check_put`); `upgrades` stays
+  the list of fitted parts for every total. Q closes, the hand keeps its part.
+- SPACE at a class plate switches class AND rocket (parts in cells the new body lacks drop back; nothing auto-fills).
 - Wall board = `DesignRules.evaluate` (mass / power / budget / slots / rocket). Toast strip at the bottom shows the
   first problem or "EVERYONE TO THE LAUNCH DOOR".
 - **Planner console** (`sprites/launch_planner_assets`, feet at 400,200 by the NAV rack): SPACE opens `planner.gd` in
   EMBEDDED mode as an overlay (CanvasLayer 15): NAV holder moves date (A/D) / path (W/S) / Mars orbit (SPACE), Q closes.
-  Others can look. The console screen edge + tag show the plan (green / amber / red).
+  Others can look. The console screen edge + a small fixed-size sign (`SIGN_PX`, "STD 26-11-20 0%") show the plan
+  (green / amber / red).
 - **Launch door zone** = READY (lights 1-4 by sorted peer id). All READY, no design errors, plan possible →
   `LaunchWindow.apply(design, plan)` → `DesignRules.chosen` → launch.tscn. Any ship or plan change un-readies everyone.
 - Co-op: host owns `{design, plan, ready_by, carried}`; actions `take / return / install / remove / class / orbit / date /
   speed / ready`; crew snapshots relayed through the host at 20 Hz. A player who leaves drops their part back on the shelf.
+- **Lighting + decor + radio** (built 2026-11-15): `HangarLighting` (`scripts/design/hangar_lighting.gd`, ColorRect z 4
+  added after the gantry overlay, under the prompts at z 5) runs `shaders/hangar_light.gdshader` over the whole map: reads
+  the screen, relights it per 480x270 pixel, quantised into 12 bands with a Bayer 4x4 dither (pixel look, no smooth
+  gradients). Dim ambient + vignette, cool shadows, warm lamp pools, orange silo glow, role-coloured shelf glow, screen glow
+  (board, computers, planner), skylight shafts over the bay, a door beacon (amber; green + fast when every player is READY,
+  dome drawn by `draw_beacon`), radio light pulsing on the beat. Lights live in `HangarLighting.LIGHTS` (max 16).
+  `HangarDecor` (`scripts/design/hangar_decor.gd`): procedural animated props in the y-sorted crew layer, `ITEMS` list:
+  2 computer desks (scrolling code / telemetry), fern + pink + yellow flowers (sway), steaming mug on the left bench,
+  boombox on the right bench; floor props are walls (`obstacles()`); `HangarDecor.Motes` = dust in the shafts (z 3).
+  Radio: host-owned `radio {on, track}` in the hangar state (on by default, random track), action `{type = "radio"}`
+  (never un-readies), target kind "radio" at `RADIO_USE`; audio = `Radio` driven by `Radio.tune(on, track)` (no sim here),
+  prompt names the track, a sign shows the title for 4 s after a change. Moving a prop = edit `ITEMS` + the matching
+  light in `LIGHTS`.
 - New key: F = `inspect` (Controls). Tutorial id "hangar" (7 panes); MissionBriefing first, as in the designer.
 - TEXT SIZE: board numbers are painted into fixed map boxes (`SIGN_PX` 6, ignore the setting); the F card is laid
   out from rows (`_card_rows`) so it grows with the text; prompts sit on a dark plate. The planner (both modes) caps
@@ -285,6 +311,48 @@ lobby → designer (**MissionBriefing** first, once per mission) → launch → 
 - Bot runs (Odyssey): sheltered crew ends ~390-400 mSv (healthy); always outside = sick after the 2nd-3rd storm.
 - Game user data lives in `%APPDATA%/Godot/app_userdata/Space turism/` (project name), not `space_dick/`.
 
+## Fun pass (built 2026-11-15): burn shove, fire, pings, ticket grades
+Picked from a list of "more fun" ideas; next after this = EDL landing finale ("7 minutes of terror").
+- **Burn shove** (real: inertia / Newton 3): a NAV burn spools `BRACE_TIME` 1.5 s (`state.brace`, klaxon, amber
+  stripes, "BRACE! 0.8" over every crew member not docked), then fires (fuel + power, debris course step) and bumps
+  `state.shove {seq, x, y, strength}`. Ship nose = +x: LEFT burn throws the crew DOWN the map (+y), RIGHT up; the Mars
+  brake (MOI) throws everyone forward (+x, strength 1.8). Each peer moves only its own `CrewMember` (`_on_state`):
+  walking crew slide `SHOVE_SPEED` 150 px/s fading over 0.55 s with 30% control, patching/spraying is cancelled;
+  DOCKED crew hold on. A second burn while spooling is ignored.
+- **Fire** (`fake_mission` fire section + `scripts/game/ship_fire.gd` `ShipFire`; SIMPLIFIED, real basis Mir 1997 fire,
+  ISS crews keep extinguishers). Starts from (a) `state.bus_heat`: rises while the loads draw more than the solar panels
+  make (base kit + heater = +30 W -> fire in ~27 s; warning toast at 50%), in the room of the hungriest load ON;
+  (b) `FIRE_ON_HIT` 25% of debris / meteoroid hits that breach nothing. `state.fires [{id, room, x, y}]` = flames; a room
+  gains a flame every 9 s (max 4), at 3+ flames lights a neighbour room through a door every 10 s, burning 12 s knocks the
+  room's station OFFLINE, each flame drains O2 0.5 %/s (hull missions only). A station in a burning room is TOO HOT:
+  the sim refuses its verbs and tickets (`_refuse_if_burning`), `Station` shows TOO HOT. One `fire` ticket per room
+  (role "team", no timer, not workable; stations skip it) ends when the room's last flame is out.
+  Extinguishers: racks in the Mission Hub (205,150) + Bridge (398,50). Hands hold ONE item: toolbox OR extinguisher
+  (`CrewMember.has_extinguisher`, synced as snapshot[8], `spraying` snapshot[9]). Drop anywhere = `drop_tool` with
+  `kind = "extinguisher"` (state.toolboxes entries now have `kind`; HullDamage only shows toolboxes). HOLD SPACE at a
+  flame `DOUSE_TIME` 1 s -> `{type = "douse", id}`. Mission flag `fire` (default on everywhere, no sandbox switch yet).
+  Report reasons: `stats.fire_overload`, `fire_knockouts`.
+- **Pings** (G, `Controls` "ping"): `{type = "ping", from, x, y, text, role}` -> `state.pings` (one per player, 3 s).
+  Text from where you stand: near a flame "FIRE HERE!", near a breach "BREACH HERE!", at a station you can't use
+  "NEED ENGINEER" (that role's colour), at your own station "ON IT!", else "HELP!". Drawn by `CrewPings`
+  (`scripts/game/crew_pings.gd`): bubble + floor rings + chirp. One button = touch-friendly.
+- **Ticket grades** (juice + report only, NEVER the score): every timed ticket done = PERFECT (>= 50% of its time left)
+  / GOOD (>= 20%) / LATE; expired (or a storm ticket still open at the wave) = MISSED, which resets the streak.
+  `state.grades {perfect, good, late, missed, streak, best, seq}`, `state.grade_log` (last 6, read entries with
+  seq > seen). Vfx stamps over the station ("PERFECT!  x5", arpeggio rising with the streak), TaskList shows the word on
+  done rows + "xN" streak in its header. Report: `MissionReport.crew_rating(grades)` = CREW S/A/B/C
+  (3/2/1/0 points per ticket, S >= 85%, A >= 65%, B >= 40%) under BEST, + PERFECT / BEST STREAK in the tally.
+- **Frozen propellant** (real: hydrazine freezes at ~2 C; probes keep tank + line heaters on all cruise; SIMPLIFIED):
+  `state.tank_temp` drifts (tau `TANK_TAU` 25 s) to equilibrium -30 + 50 x sunlight (1/r^2, as ShipLighting) + part
+  `tank_warm` (RTG 12, radiator 6) + heater 30. Without the heater it stays liquid near Earth and freezes from ~1.25 AU
+  (mid-cruise; Mars eq ~ -8 C). Below `COLD_C` 10 C while cooling: engineer ticket "freeze" (timer = time to 2 C, ~14 s at
+  Mars; hold USE = heater ON, graded). At 2 C `fuel_frozen`: burns and the MOI brake are refused ("FUEL FROZEN"), ticket
+  becomes untimed, thaws above 4 C (~3 s with the heater). The catch: heater on with the base kit = 30 W over the panels ->
+  bus heat -> fire in ~27 s, so the Engineer cycles it (toast at 15 C "tanks warm"). HUD fuel bar badge COLD / FROZEN,
+  Station verbs HEATER ON / FROZEN, report reason from `stats.freezes / frozen_time`. Mission flag `freeze` (default on).
+- New sounds (gen_sounds.py, appended so old WAVs are unchanged): klaxon, whoosh, ignite, fire (loop), spray (loop),
+  ping, perfect. New 8x8 icons: fire (own colours), extinguisher, ping.
+
 ## Radio (`scripts/game/radio_set.gd` object + `scripts/game/radio.gd` audio)
 - A boombox on the Mission Hub bench (RadioSet, use point 308,158). Walk up, SPACE = on/off
   (CrewMember sends `{type = "radio"}`; sim keeps `state.radio = {on, track}`, so co-op peers hear the same radio;
@@ -303,6 +371,13 @@ lobby → designer (**MissionBriefing** first, once per mission) → launch → 
 - Alone (offline or the only player in a room) the whole game pauses (tree, sound loops, radio). With 2+ players
   it pauses only when EVERY player has the menu open (host counts via RPC on PauseMenu, tells everyone);
   until then the mission runs and only local input is blocked (`Tutorial.hold()`). Tutorial + PauseMenu + Sfx run with PROCESS_MODE_ALWAYS.
+
+## Cruise screen offset
+- The ship map sits `WORLD_Y` (12 px, `game.gd`) lower on screen so the top HUD blocks cover less of the rooms (whole hull
+  still on screen). TAB cycles the top HUD: open -> task list folded -> all hidden (small TAB tab + open task count) -> open.
+  Done with a top-level Camera2D, so every map coordinate (stations, lockers, radio, breaches) is unchanged.
+  Anything that draws map positions on a CanvasLayer adds `UiKit.world_offset` (or uses `UiKit.world_rect(r)`):
+  event-guide arrows/highlights, cruise tutorial rects, `Station` HUD avoidance. Stars/grains stay screen-wide (vfx).
 
 ## Cruise lighting (`scripts/game/ship_lighting.gd`, `shaders/light_*.gdshader`)
 - SIMPLIFIED: progress = day / 259 on the transfer ellipse (a 1.26 AU, e 0.206) -> Sun 1.00 -> 1.52 AU,

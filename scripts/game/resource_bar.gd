@@ -29,6 +29,11 @@ var _juice := UiJuice.new()
 var _started := false
 
 
+## Short note drawn over the bar ("" = none), set by the HUD from sim state.
+var badge := ""
+var badge_col := Color.WHITE
+
+
 func _init(p_key: String, p_icon: String, p_color: Color) -> void:
 	key = p_key
 	icon = p_icon
@@ -105,6 +110,8 @@ func draw(ci: CanvasItem, at: Vector2) -> void:
 	var gaining := _target > _fill + 0.5
 	var ghost_col := Color(color.lightened(0.55), 0.8) if gaining else UiKit.BAD
 	UiKit.seg_bar(ci, bar, _fill / 100.0, fill_col, SEGMENTS, _ghost / 100.0, ghost_col, _juice.flash("flash"))
+	if badge != "":   # e.g. the fuel tanks' temperature: "COLD 3C" / "FROZEN" over the bar
+		UiKit.text_c(ci, roundf(bar.get_center().x), bar.end.y + 1, badge, 6, badge_col)
 	# Number: pops on change, red on a drop, green on a gain.
 	var num := str(int(roundf(_target)))
 	var num_col := UiKit.TEXT

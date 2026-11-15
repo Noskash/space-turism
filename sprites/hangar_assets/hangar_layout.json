@@ -41,9 +41,9 @@
     },
     {
       "kind": "rack-navigator",
-      "x": 383,
+      "x": 392,
       "y": 221,
-      "w": 83,
+      "w": 74,
       "h": 41
     },
     {
@@ -51,7 +51,14 @@
       "x": 152,
       "y": 20,
       "w": 172,
-      "h": 26
+      "h": 17
+    },
+    {
+      "kind": "silo",
+      "x": 186,
+      "y": 132,
+      "w": 109,
+      "h": 19
     },
     {
       "kind": "gantry-leg",
@@ -394,11 +401,11 @@
       "part_id": "tank_large",
       "role": "navigator",
       "name": "Large propellant tank",
-      "x": 393,
+      "x": 402,
       "y": 242,
       "interact_radius": 26,
       "bin": {
-        "x": 385,
+        "x": 394,
         "y": 231,
         "w": 16,
         "h": 22
@@ -411,11 +418,11 @@
       "part_id": "star_tracker",
       "role": "navigator",
       "name": "Star tracker",
-      "x": 411,
+      "x": 420,
       "y": 242,
       "interact_radius": 26,
       "bin": {
-        "x": 403,
+        "x": 412,
         "y": 231,
         "w": 16,
         "h": 22
@@ -428,11 +435,11 @@
       "part_id": "reaction_wheels",
       "role": "navigator",
       "name": "Reaction wheels",
-      "x": 429,
+      "x": 438,
       "y": 242,
       "interact_radius": 26,
       "bin": {
-        "x": 421,
+        "x": 430,
         "y": 231,
         "w": 16,
         "h": 22
@@ -445,18 +452,18 @@
       "part_id": "whipple_shield",
       "role": "navigator",
       "name": "Whipple shield",
-      "x": 451,
+      "x": 456,
       "y": 242,
       "interact_radius": 26,
       "bin": {
-        "x": 439,
+        "x": 448,
         "y": 231,
-        "w": 25,
+        "w": 16,
         "h": 22
       },
-      "icon": "res://sprites/hangar_assets/placeholders/icons/whipple_shield.png",
-      "mounted": "res://sprites/hangar_assets/placeholders/mounted/whipple_shield.png",
-      "missing_art": true
+      "icon": "res://sprites/upgrade_kit_assets/icons/whipple_shield.png",
+      "mounted": "res://sprites/upgrade_kit_assets/mounted/whipple_shield.png",
+      "missing_art": false
     }
   ],
   "racks": [
@@ -490,9 +497,9 @@
     {
       "role": "navigator",
       "label": "NAVIGATOR - NAV",
-      "x": 383,
+      "x": 392,
       "y": 221,
-      "w": 83,
+      "w": 74,
       "h": 41,
       "side": "south"
     }
@@ -501,21 +508,7 @@
     "x": 156,
     "y": 48,
     "w": 168,
-    "h": 104,
-    "body_anchor": {
-      "x": 240,
-      "y": 100
-    },
-    "preview_origin": {
-      "x": 160,
-      "y": 38
-    },
-    "cradle": {
-      "x": 203,
-      "y": 63,
-      "w": 74,
-      "h": 74
-    }
+    "h": 104
   },
   "class_stands": [
     {
@@ -567,6 +560,66 @@
       }
     }
   ],
+  "rocket": {
+    "note": "drawn at runtime: the class's rocket rises out of the silo hole, cylinder centred on center_x, base on bottom_y; then `front` (the deck in front of the hole) is drawn over it. The folded ship (ShipPreview.folded) is centred in `opening` (sprite-local). Collision = the sprite rect + the silo obstacle; SPACE within reach opens the rocket board.",
+    "center_x": 240,
+    "bottom_y": 147,
+    "reach": 12,
+    "types": {
+      "light": {
+        "w": 67,
+        "h": 92,
+        "cyl_x": 10,
+        "cyl_w": 56,
+        "name": "ELECTRON",
+        "ship_class": "light",
+        "opening": {
+          "x": 14,
+          "y": 24,
+          "w": 48,
+          "h": 60
+        },
+        "sprite": "res://sprites/hangar_assets/rockets/bay_light.png"
+      },
+      "medium": {
+        "w": 79,
+        "h": 104,
+        "cyl_x": 10,
+        "cyl_w": 68,
+        "name": "ZENIT",
+        "ship_class": "balanced",
+        "opening": {
+          "x": 14,
+          "y": 24,
+          "w": 60,
+          "h": 72
+        },
+        "sprite": "res://sprites/hangar_assets/rockets/bay_medium.png"
+      },
+      "heavy": {
+        "w": 91,
+        "h": 110,
+        "cyl_x": 10,
+        "cyl_w": 80,
+        "name": "PROTON",
+        "ship_class": "heavy",
+        "opening": {
+          "x": 14,
+          "y": 18,
+          "w": 72,
+          "h": 84
+        },
+        "sprite": "res://sprites/hangar_assets/rockets/bay_heavy.png"
+      }
+    },
+    "silo": {
+      "x": 240,
+      "y": 141,
+      "rx": 54,
+      "ry": 9
+    },
+    "front": "res://sprites/hangar_assets/maps/hangar_silo_front_480x270.png"
+  },
   "benches": [
     {
       "x": 94,
@@ -583,17 +636,31 @@
   ],
   "board": {
     "x": 160,
-    "y": 2,
+    "y": 0,
     "w": 160,
-    "h": 42,
+    "h": 35,
     "fields": {
       "class": {
         "x": 272,
-        "y": 5,
+        "y": 0,
         "w": 44,
         "h": 8
       },
       "mass": {
+        "bar": {
+          "x": 193,
+          "y": 11,
+          "w": 60,
+          "h": 3
+        },
+        "value": {
+          "x": 256,
+          "y": 9,
+          "w": 30,
+          "h": 7
+        }
+      },
+      "power": {
         "bar": {
           "x": 193,
           "y": 17,
@@ -607,7 +674,7 @@
           "h": 7
         }
       },
-      "power": {
+      "budget": {
         "bar": {
           "x": 193,
           "y": 23,
@@ -621,7 +688,7 @@
           "h": 7
         }
       },
-      "budget": {
+      "slots": {
         "bar": {
           "x": 193,
           "y": 29,
@@ -635,23 +702,9 @@
           "h": 7
         }
       },
-      "slots": {
-        "bar": {
-          "x": 193,
-          "y": 35,
-          "w": 60,
-          "h": 3
-        },
-        "value": {
-          "x": 256,
-          "y": 33,
-          "w": 30,
-          "h": 7
-        }
-      },
       "rocket": {
         "x": 289,
-        "y": 33,
+        "y": 25,
         "w": 25,
         "h": 7
       }
@@ -740,10 +793,5 @@
       "bottom": 6
     }
   },
-  "placeholders": {
-    "whipple_shield": {
-      "icon": "res://sprites/hangar_assets/placeholders/icons/whipple_shield.png",
-      "mounted": "res://sprites/hangar_assets/placeholders/mounted/whipple_shield.png"
-    }
-  }
+  "placeholders": {}
 }

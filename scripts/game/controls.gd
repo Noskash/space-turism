@@ -17,8 +17,9 @@ const SCHEMES := {
 		"radar": [KEY_E],  # Bridge radar on/off while docked there
 		"run": [KEY_SHIFT],  # hold while walking
 		"skin": [KEY_K],  # cycle skins (until the character screen picks them)
-		"tasks": [KEY_TAB],  # fold / unfold the HUD task list
+		"tasks": [KEY_TAB],  # cruise HUD: fold the task list -> hide the whole top -> show it again
 		"inspect": [KEY_F],  # hangar: read the part / stand / console in reach
+		"ping": [KEY_G],  # cruise: call out to the crew ("HELP!", "NEED ENGINEER", "FIRE HERE!")
 	},
 }
 

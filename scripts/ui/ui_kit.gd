@@ -51,6 +51,9 @@ const ICON_DIR := "res://sprites/ui_icons/"
 ## Cruise HUD block rects in screen units: "resources", "progress", "alert", "tasks",
 ## "action", "you". Empty outside the cruise.
 static var hud := {}
+## Where the world (ship map) sits on screen: the cruise moves it down to leave a band for the top HUD.
+## Screen point = world point + world_offset. Use world_rect() for highlights given in map coordinates.
+static var world_offset := Vector2.ZERO
 ## Other overlays' rects that HUD pieces should stack under (e.g. "guide" = event checklist).
 static var overlays := {}
 
@@ -60,6 +63,10 @@ static var _checker: ImageTexture
 
 static func role_color(role: String) -> Color:
 	return ROLE_COLORS.get(role.split("+")[0], Color("e8e8e8"))
+
+
+static func world_rect(r: Rect2) -> Rect2:
+	return Rect2(r.position + world_offset, r.size)
 
 
 static func hud_rect(key: String, fallback := Rect2()) -> Rect2:

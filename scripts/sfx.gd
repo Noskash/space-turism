@@ -16,6 +16,7 @@ const VOLUME := {
 	"ui_hover": -10.0, "ui_click": -4.0, "step": -14.0, "work_tick": -8.0, "select": -6.0,
 	"toast": -10.0, "hum": -12.0, "downlink": -6.0, "burn": -3.0, "alarm": -5.0,
 	"engine": -14.0, "static": -12.0, "siren": -4.0, "lever": -6.0, "countdown": -4.0, "rocket": -2.0,
+	"klaxon": -6.0, "fire": -8.0, "spray": -9.0, "ping": -4.0, "perfect": -6.0,
 }
 ## Hover sounds are ignored right after a scene builds its UI (menus grab focus on _ready).
 const HOVER_QUIET_MS := 200

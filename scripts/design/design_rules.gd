@@ -4,7 +4,11 @@ extends RefCounted
 ## cruise sim derives from a design. Pure data + static functions, no nodes.
 ##
 ## A design is a plain dictionary (goes over the network unchanged):
-##   {ship_class = "balanced", upgrades = ["rtg", "camera_hires"]}
+##   {ship_class = "balanced", upgrades = ["rtg", "camera_hires"], cells = ["", "rtg", "camera_hires", "", ""]}
+## `cells` (optional) = which upgrade cell of the class body holds which part ("" = empty), set by the
+## hangar's rocket board. `upgrades` is always the list of fitted parts (every total reads it); without
+## `cells` the parts fill the cells in list order (the old designer, tests).
+## The rocket comes with the ship class (CLASS_ROCKET): the class plates in the hangar pick both.
 ## Numbers live in res://data/design_stats.json; art and slot layouts come from the asset JSONs.
 
 const STATS_PATH := "res://data/design_stats.json"
@@ -66,6 +70,60 @@ static func upgrades_for_role(role: String) -> Array[String]:
 	return out
 
 
+## Ship class -> the rocket that flies it (launcher ids in design_stats.json).
+const CLASS_ROCKET := {light = "light", balanced = "medium", heavy = "heavy"}
+
+
+static func rocket_for(ship_class: String) -> Dictionary:
+	var id: String = CLASS_ROCKET.get(ship_class, "medium")
+	for l: Dictionary in data().stats.launchers:
+		if l.id == id:
+			return l
+	return {}
+
+
+## Upgrade cells of the design's class: part id per cell ("" = empty), always the class's slot count.
+static func cells_of(design: Dictionary) -> Array:
+	var slots := int(class_info(design.get("ship_class", "balanced")).get("upgrade_slots", 0))
+	var out: Array = design.get("cells", []).duplicate()
+	if out.is_empty():
+		out = design.get("upgrades", []).duplicate()
+	out.resize(slots)
+	for i in slots:
+		out[i] = str(out[i]) if out[i] != null else ""
+	return out
+
+
+## New design with `part_id` in `cell` ("" = empty the cell). Whatever was there leaves the ship.
+static func put(design: Dictionary, cell: int, part_id: String) -> Dictionary:
+	var out := design.duplicate(true)
+	var cells := cells_of(design)
+	if cell < 0 or cell >= cells.size():
+		return out
+	if part_id != "":
+		var at := cells.find(part_id)   # a part sits in one cell only
+		if at >= 0:
+			cells[at] = ""
+	cells[cell] = part_id
+	out.cells = cells
+	out.upgrades = cells.filter(func(id: String) -> bool: return id != "")
+	return out
+
+
+## Why `part_id` cannot go into `cell` (swapping out what is there) right now ("" = it can).
+static func check_put(design: Dictionary, cell: int, part_id: String) -> String:
+	var cells := cells_of(design)
+	if cell < 0 or cell >= cells.size():
+		return "NO SUCH CELL"
+	var after := evaluate(put(design, cell, part_id))
+	var before := evaluate(design)
+	if after.mass > after.mass_limit and after.mass > before.mass:
+		return "TOO HEAVY (+%d KG)" % int(after.mass - after.mass_limit)
+	if after.cost > after.budget and after.cost > before.cost:
+		return "OVER BUDGET ($%dM SHORT)" % int(after.cost - after.budget)
+	return ""
+
+
 static func new_design(ship_class := "balanced") -> Dictionary:
 	return {ship_class = ship_class, upgrades = [], orbit = Orbits.default_id()}
 
@@ -95,7 +153,7 @@ static func evaluate(design: Dictionary) -> Dictionary:
 			gen += w
 		else:
 			draw -= w
-	var launcher := launcher_for(mass)
+	var launcher := rocket_for(design.get("ship_class", "balanced"))   # the class plate picks the rocket
 	if not launcher.is_empty():
 		cost += float(launcher.cost)
 	var result := {
@@ -110,7 +168,9 @@ static func evaluate(design: Dictionary) -> Dictionary:
 	if mass > result.mass_limit:
 		result.errors.append("TOO HEAVY FOR A %s SHIP" % str(cls.get("name", "")).to_upper())
 	if launcher.is_empty():
-		result.errors.append("NO ROCKET CAN LIFT %d KG" % mass)
+		result.errors.append("NO ROCKET FOR THIS SHIP")
+	elif mass > float(launcher.capacity_kg) * LIFT_MARGIN:
+		result.errors.append("ROCKET CAN'T LIFT %d KG (MAX %d)" % [mass, int(float(launcher.capacity_kg) * LIFT_MARGIN)])
 	if cost > result.budget:
 		result.errors.append("OVER BUDGET")
 	return result
@@ -140,8 +200,8 @@ static func check_add(design: Dictionary, part_id: String) -> String:
 		return "NO FREE SLOT"
 	if after.mass > after.mass_limit:
 		return "TOO HEAVY (+%d KG)" % int(after.mass - after.mass_limit)
-	if after.launcher.is_empty():
-		return "NO ROCKET CAN LIFT IT"
+	if after.launcher.is_empty() or after.mass > float(after.launcher.capacity_kg) * LIFT_MARGIN:
+		return "ROCKET CAN'T LIFT IT"
 	if after.cost > after.budget:
 		return "OVER BUDGET ($%dM SHORT)" % int(after.cost - after.budget)
 	return ""
@@ -154,16 +214,20 @@ static func toggle(design: Dictionary, part_id: String) -> Dictionary:
 		out.upgrades.erase(part_id)
 	elif check_add(design, part_id) == "":
 		out.upgrades.append(part_id)
+	out.erase("cells")   # the menu designer fills cells in list order
 	return out
 
 
-## Switch ship class; upgrades that no longer fit (slots) are dropped from the end.
+## Switch ship class (and with it the rocket); parts in cells the new body does not have are dropped.
 static func set_class(design: Dictionary, ship_class: String) -> Dictionary:
 	var out := design.duplicate(true)
+	var cells := cells_of(design)
 	out.ship_class = ship_class
 	var slots := int(class_info(ship_class).get("upgrade_slots", 0))
-	while out.upgrades.size() > slots:
-		out.upgrades.pop_back()
+	cells.resize(mini(cells.size(), slots))
+	out.cells = cells
+	out.cells = cells_of(out)
+	out.upgrades = out.cells.filter(func(id: String) -> bool: return id != "")
 	return out
 
 
@@ -187,6 +251,7 @@ static func mission_params(design: Dictionary) -> Dictionary:
 		cme_warning = 0.0,     # extra seconds of radiation storm warning (particle monitor)
 		dust_warning = 0.0,    # extra seconds of comet-dust warning (star tracker)
 		steer_free = false,    # dodge without thrusters (reaction wheels)
+		tank_warm = 0.0,       # C of waste heat on the propellant tanks (RTG, radiator): less heater needed
 		# Hull: damage per debris hit from the ship class (heavier hull = less), Whipple shield halves it.
 		hull_hit = float(class_info(design.get("ship_class", "balanced")).get("hull_hit", 12)),
 		breach_mult = 1.0,     # Whipple shield: fewer breaches
@@ -220,6 +285,7 @@ static func mission_params(design: Dictionary) -> Dictionary:
 		p.cme_warning += float(fx.get("cme_warning", 0))
 		p.dust_warning += float(fx.get("dust_warning", 0))
 		p.steer_free = p.steer_free or bool(fx.get("steer_free", 0))
+		p.tank_warm += float(fx.get("tank_warm", 0))
 		p.hull_hit *= float(fx.get("hull_hit_mult", 1))
 		p.breach_mult *= float(fx.get("breach_mult", 1))
 	return p

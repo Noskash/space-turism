@@ -117,6 +117,56 @@ const LEAK_RATE := 0.45            # fuel % per second until the Navigator seals
 const LEAK_WORK := 2.5
 var crew_rooms := {}               # crew key -> room id, written by the host's game each frame
 
+# --- burn shove, pings, ticket grades, fire (2026-11-15 fun pass) ---
+# Burns: a course burn spools up BRACE_TIME s (state.brace, klaxon) before it fires; then state.shove
+# throws every crew member who is walking (docked = holding on). The ship's nose points right (+x):
+# a LEFT burn pushes the ship up the map, so the crew slide down, and the reverse; the Mars brake
+# throws everyone forward, towards the Bridge. Each peer moves its own crew member (CrewMember).
+const BRACE_TIME := 1.5
+const SHOVE_COURSE := 1.0
+const SHOVE_BRAKE := 1.8
+const PING_TIME := 3.0             # state.pings: one "HELP!" / "NEED ENGINEER" marker per player
+const MAX_PINGS := 6
+const GRADE_PERFECT := 0.5         # share of a ticket's time still left when it was done
+const GRADE_GOOD := 0.2
+# Fire (SIMPLIFIED): the power bus overheats while the loads draw more than the panels make
+# (state.bus_heat), and debris / meteoroid hits can spark one. Flames (state.fires [{id, room, x, y}])
+# grow in their room, spread through the doors, block the room's station and eat oxygen. Put each
+# flame out with an extinguisher (racks in the Mission Hub + Bridge): HOLD USE next to it -> douse.
+const FIRE_GROW := 9.0             # a burning room gains a flame this often...
+const FIRE_MAX := 4                # ...up to this many
+const FIRE_SPREAD := 10.0          # a room with FIRE_SPREAD_AT+ flames lights a neighbour this often
+const FIRE_SPREAD_AT := 3
+const FIRE_KNOCKOUT := 12.0        # the room's station goes OFFLINE after burning this long
+const FIRE_O2 := 0.5               # O2 % per second per flame (missions with the hull system)
+const FIRE_ON_HIT := 0.25          # chance a hit that breaches nothing starts a fire
+const HEAT_TIME := 20.0            # seconds of a 40 W deficit until the bus catches fire
+const HEAT_COOL := 8.0             # heat % lost per second without a deficit
+const HEAT_WARN := 50.0
+const STATION_ROOMS := {comms = "comms", scientist = "science", engineer = "engineering",
+		navigator = "bridge", team = "hub"}
+const LOAD_ROOMS := {instruments = "science", transmitter = "comms", heater = "engineering"}
+const ROOM_NAMES := {comms = "COMMS", science = "SCIENCE LAB", bridge = "BRIDGE", engineering = "ENGINE ROOM",
+		hub = "MISSION HUB", cargo = "CARGO"}
+# Frozen propellant (real: hydrazine freezes around 1-2 C, so tanks and fuel lines are heated all the way to
+# Mars). SIMPLIFIED thermal model: state.tank_temp drifts (time constant TANK_TAU) towards an equilibrium set
+# by sunlight (1/r^2 on the transfer ellipse, as ShipLighting), the HEATER load (+HEATER_GAIN) and part waste
+# heat (params.tank_warm: RTG, radiator). Early on the Sun keeps the tanks warm; past ~1.25 AU they cool below
+# freezing without the heater. Below COLD_C the Engineer gets a "freeze" ticket counting down to FREEZE_C
+# (hold USE = heater ON). Frozen: no burns, no Mars brake, until the tanks are back above THAW_C. The heater
+# draws power (and can overheat the bus -> fire), so the Engineer cycles it: the trade-off.
+const FREEZE_C := 2.0
+const THAW_C := 4.0
+const COLD_C := 10.0              # below this (and still cooling) the Engineer gets a ticket: ~14 s at Mars
+const WARM_C := 15.0               # warm enough: hint that the heater can go off
+const TANK_TAU := 25.0
+const HEATER_GAIN := 30.0
+var _warm_said := false
+var _room_burn := {}               # room -> seconds on fire (station knock-out)
+var _room_grow := {}               # room -> seconds to its next flame
+var _room_spread := {}             # room -> seconds to lighting a neighbour
+var _heat_warned := false
+
 
 func _on(flag: String) -> bool:
 	return bool(_sim.get(flag, true))
@@ -155,7 +205,8 @@ func start(design: Dictionary) -> void:
 		finished = {},                      # {outcome = orbit|flyby|miss, ...} when the mission is over
 		stats = {storms = 0, safe_modes = 0, disabled = 0, knockouts = 0, debris_hits = 0, breaches = 0,
 				big_storm = "", fuel_at_moi = -1.0, caught_outside = 0, sheltered = 0,
-				leaks = 0, leak_fuel = 0.0, leak_day = -1.0, sick = []},
+				leaks = 0, leak_fuel = 0.0, leak_day = -1.0, sick = [],
+				fires = 0, fire_overload = 0, fire_knockouts = 0, freezes = 0, frozen_time = 0.0},
 		crew = {},              # key -> {astronaut, dose (mSv), sick, room} (set_crew + _tick_crew)
 		day = 0.0,
 		power = 80.0,
@@ -180,6 +231,15 @@ func start(design: Dictionary) -> void:
 		lost = "",              # why the mission was lost ("" = still flying)
 		dust = _dust_idle(0),   # phase "" | "warning" | "stream" (waiting for a pilot) | "flying"
 		radio = {on = true, track = _rng.randi() % 5},  # the Mission Hub radio (RadioSet / Radio)
+		brace = _brace_idle(),  # a burn spooling up: {time_left (-1 = none), duration, dir}
+		shove = {seq = 0, x = 0.0, y = 0.0, strength = 0.0},   # the burn fired: crew get thrown (seq bumps)
+		pings = [],             # [{id, from, x, y, text, role}] crew call-outs (PING_TIME s)
+		grades = {perfect = 0, good = 0, late = 0, missed = 0, streak = 0, best = 0, seq = 0},
+		grade_log = [],         # last few [{seq, id, grade, role, streak}] (stamps; read entries with seq > seen)
+		fires = [],             # [{id, room, x, y}] flames (put out with an extinguisher)
+		bus_heat = 0.0,         # % power bus overheating (draw > solar); 100 = fire
+		tank_temp = 20.0,       # propellant tank / fuel line temperature, C (SIMPLIFIED)
+		fuel_frozen = false,    # below FREEZE_C: no burns until thawed above THAW_C
 		last_action = "",
 		action_seq = 0,
 		design = design,
@@ -207,7 +267,14 @@ func tick(dt: float) -> void:
 		state.day = minf(state.day, state.cruise_days)
 	_tick_crew(state.day - day_before)
 	_tick_leak(dt)
+	_tick_brace(dt)
+	_tick_pings(dt)
+	if _on("fire"):
+		_tick_heat(dt)
+		_tick_fire(dt)
 	_tick_power(dt)
+	if _on("freeze"):
+		_tick_tanks(dt)
 	_tick_data(dt)
 	_tick_conjunction(dt)
 	_tick_dsn(dt)
@@ -306,11 +373,12 @@ func _tick_events(dt: float) -> void:
 		if state.cme.phase == "" and state.dust.phase not in ["stream", "flying"] and not _arriving():
 			_spawn_random_event()
 	for event: Dictionary in state.events.duplicate():
-		if event.time_left < 0.0 or event.kind in ["shields", "safe_mode", "dust"]:
-			continue  # repairs have no timer; space-weather tickets are run by their own tick
+		if event.time_left < 0.0 or event.kind in ["shields", "safe_mode", "dust", "freeze"]:
+			continue  # repairs have no timer; space-weather + freeze tickets are run by their own tick
 		event.time_left -= dt
 		if event.time_left <= 0.0:
 			if event.kind == "moi":
+				_grade_missed(event)
 				_remove_event(event)
 				_finish("miss")
 				return
@@ -442,6 +510,7 @@ func _cme_hits() -> void:
 			shielding = state.cme.get("shielding", false), big = big}
 	for e: Dictionary in state.events.duplicate():
 		if e.kind in ["shields", "safe_mode"]:
+			_grade_missed(e)   # still open as the wave hit (a done one was removed by _resolve)
 			_remove_event(e)
 	# A storm READING (mission goal): the instruments were on and the lab working as the wave hit.
 	# Safe mode switches them off, so it protects the ship but records nothing - the trade-off.
@@ -590,6 +659,9 @@ func _impact(force: float, extra_breach: float, title: String) -> bool:
 	if _on("hull") and state.breaches.size() < MAX_BREACHES and _rng.randf() < clampf(chance, 0.05, 0.95):
 		_open_breach()
 		return true
+	if _on("fire") and _rng.randf() < FIRE_ON_HIT:
+		_start_fire("", title.to_lower() + " sparked it")
+		return false
 	var roll := _rng.randf()
 	if roll < 0.5:
 		var roles := ["engineer", "comms", "scientist", "navigator"].filter(func(r: String) -> bool: return r not in state.offline)
@@ -603,18 +675,25 @@ func _impact(force: float, extra_breach: float, title: String) -> bool:
 
 
 func _open_breach() -> void:
-	var at := _breach_point()
+	var at := _floor_point()
 	state.stats.breaches = int(state.stats.breaches) + 1
 	state.breaches.append({id = _next_id, x = at.x, y = at.y})
 	_next_id += 1
 
 
-## A free floor spot inside a room: not on an obstacle, a station or another breach.
-func _breach_point() -> Vector2:
+func _load_layout() -> void:
 	if _layout.is_empty():
 		var f := FileAccess.open(LAYOUT_PATH, FileAccess.READ)
 		_layout = JSON.parse_string(f.get_as_text()) if f else {}
+
+
+## A free floor spot inside a room (`room_id`, "" = any): not on an obstacle, a station, a breach
+## or a flame.
+func _floor_point(room_id := "") -> Vector2:
+	_load_layout()
 	var rooms: Array = _layout.get("rooms", [])
+	if room_id != "":
+		rooms = rooms.filter(func(r: Dictionary) -> bool: return r.get("id", "") == room_id)
 	var best := Vector2(240, 190)
 	for attempt in 40:
 		if rooms.is_empty():
@@ -631,6 +710,9 @@ func _breach_point() -> Vector2:
 		for b: Dictionary in state.breaches:
 			if p.distance_to(Vector2(b.x, b.y)) < 24.0:
 				ok = false
+		for fl: Dictionary in state.get("fires", []):
+			if p.distance_to(Vector2(fl.x, fl.y)) < 14.0:
+				ok = false
 		if ok:
 			return p
 		best = p
@@ -639,10 +721,12 @@ func _breach_point() -> Vector2:
 
 func _tick_oxygen(dt: float) -> void:
 	var open: int = state.breaches.size()
-	if open > 0:
-		state.oxygen = maxf(state.oxygen - O2_DRAIN * open * dt, 0.0)
+	var flames: int = state.fires.size() if _on("fire") else 0
+	if open > 0 or flames > 0:
+		state.oxygen = maxf(state.oxygen - (O2_DRAIN * open + FIRE_O2 * flames) * dt, 0.0)
 		if state.oxygen <= 0.0:
-			state.lost = "OXYGEN RAN OUT - the hull breaches were not sealed in time"
+			state.lost = "OXYGEN RAN OUT - " + ("the hull breaches were not sealed in time" if open > 0
+					else "the fire burned up the cabin air")
 			_say("MISSION LOST - " + state.lost)
 			_emit()
 			Events.mission_finished.emit({outcome = "lost", reason = state.lost,
@@ -742,6 +826,330 @@ func _tick_leak(dt: float) -> void:
 			return
 
 
+# --- burn shove ------------------------------------------------------------------------------
+
+static func _brace_idle() -> Dictionary:
+	return {time_left = -1.0, duration = BRACE_TIME, dir = ""}
+
+
+## The spooled-up course burn fires: fuel + power, the debris course change, and the crew get thrown.
+func _tick_brace(dt: float) -> void:
+	var brace: Dictionary = state.brace
+	if float(brace.time_left) < 0.0:
+		return
+	brace.time_left = float(brace.time_left) - dt
+	if float(brace.time_left) > 0.0:
+		return
+	var dir := str(brace.dir)
+	state.brace = _brace_idle()
+	state.fuel = maxf(state.fuel - params.burn_fuel, 0.0)
+	state.power = maxf(state.power - 3.0, 0.0)
+	_shove(Vector2(0.0, 1.0 if dir == "left" else -1.0), SHOVE_COURSE)
+	if state.dust.phase == "warning":   # steering around the debris cloud
+		var step := COURSE_STEP * (-1.0 if dir == "left" else 1.0)
+		state.dust.course = clampf(float(state.dust.course) + step, -1.2, 1.2)
+		var clear := _dust_density(state.dust) <= 0.0
+		_say("NAV: heading %+.0f deg - %s" % [float(state.dust.course) * DEG_PER_UNIT,
+				"CLEAR OF THE DEBRIS" if clear else "still in the field"])
+	else:
+		_say("NAV: %s burn - crew thrown (inertia)" % dir)
+	_emit()
+
+
+func _shove(dir: Vector2, strength: float) -> void:
+	state.shove = {seq = int(state.shove.seq) + 1, x = dir.x, y = dir.y, strength = strength}
+
+
+# --- pings + ticket grades ---------------------------------------------------------------------
+
+func _tick_pings(dt: float) -> void:
+	if state.pings.is_empty():
+		return
+	for p: Dictionary in state.pings:
+		p.time_left = float(p.time_left) - dt
+	state.pings = state.pings.filter(func(p: Dictionary) -> bool: return float(p.time_left) > 0.0)
+
+
+## A timed ticket was done: PERFECT (half its time or more left) / GOOD / LATE. Repairs and other
+## tickets without a timer are not graded. Juice + the report's CREW RATING only, never the score.
+func _grade(event: Dictionary) -> void:
+	if not _timed(event):
+		return
+	var frac := maxf(float(event.time_left), 0.0) / float(event.duration)
+	var grade := "perfect" if frac >= GRADE_PERFECT else ("good" if frac >= GRADE_GOOD else "late")
+	var g: Dictionary = state.grades
+	g[grade] = int(g[grade]) + 1
+	g.streak = int(g.streak) + 1
+	g.best = maxi(int(g.best), int(g.streak))
+	_log_grade(event, grade)
+
+
+## A timed ticket ran out (or the storm hit with it still open): breaks the streak.
+func _grade_missed(event: Dictionary) -> void:
+	if not _timed(event):
+		return
+	state.grades.missed = int(state.grades.missed) + 1
+	state.grades.streak = 0
+	_log_grade(event, "missed")
+
+
+## Has a countdown (repairs, leaks and fires have duration -1). time_left is already < 0 at expiry.
+static func _timed(event: Dictionary) -> bool:
+	return not bool(event.get("repair", false)) and float(event.get("duration", -1.0)) > 0.0
+
+
+func _log_grade(event: Dictionary, grade: String) -> void:
+	state.grades.seq = int(state.grades.seq) + 1
+	state.grade_log.append({seq = state.grades.seq, id = int(event.id), grade = grade,
+			role = str(event.get("role", "")), streak = int(state.grades.streak)})
+	while state.grade_log.size() > 6:
+		state.grade_log.pop_front()
+
+
+# --- fire --------------------------------------------------------------------------------------
+
+## Watts the base load + every switched-on load draw.
+func _load_draw() -> float:
+	var draw: float = params.base_w
+	for load: String in LOADS:
+		if state.loads[load]:
+			draw += params[load + "_w"]
+	return draw
+
+
+## The power bus heats up while the loads draw more than the solar panels make (the battery covers
+## the rest) and catches fire at 100%, in the room of the hungriest load. Cools when back in balance.
+func _tick_heat(dt: float) -> void:
+	var deficit := _load_draw() - float(params.solar_w)
+	if state.blackout > 0.0 or state.cme.get("safe", false):
+		deficit = 0.0   # everything is off anyway
+	var heat: float = state.bus_heat
+	if deficit > 0.0:
+		heat += 100.0 / HEAT_TIME * clampf(deficit / 40.0, 0.5, 2.0) * dt
+	else:
+		heat = maxf(heat - HEAT_COOL * dt, 0.0)
+	if heat >= HEAT_WARN and not _heat_warned:
+		_heat_warned = true
+		_say("POWER BUS OVERHEATING (+%d W) - ENGINEER: load OFF!" % int(deficit))
+	elif heat < HEAT_WARN * 0.6:
+		_heat_warned = false
+	if heat >= 100.0:
+		heat = 40.0
+		var room := "engineering"
+		var hungriest := 0.0
+		for load: String in LOADS:
+			if state.loads[load] and float(params[load + "_w"]) > hungriest:
+				hungriest = float(params[load + "_w"])
+				room = LOAD_ROOMS[load]
+		state.stats.fire_overload = int(state.stats.fire_overload) + 1
+		_start_fire(room, "overloaded wiring")
+	state.bus_heat = heat
+
+
+func _flames_in(room: String) -> int:
+	var n := 0
+	for f: Dictionary in state.fires:
+		if f.room == room:
+			n += 1
+	return n
+
+
+## A fire starts in `room` ("" = a random room). A room already burning just gets one more flame.
+func _start_fire(room: String, why: String) -> void:
+	if room == "":
+		var ids: Array = ROOM_NAMES.keys()
+		room = ids[_rng.randi() % ids.size()]
+	var new_fire := _flames_in(room) == 0
+	if not new_fire and _flames_in(room) >= FIRE_MAX:
+		return
+	_add_flame(room)
+	if not new_fire:
+		return
+	_room_burn[room] = 0.0
+	_room_grow[room] = FIRE_GROW
+	_room_spread[room] = FIRE_SPREAD
+	state.stats.fires = int(state.stats.fires) + 1
+	var e := {id = _next_id, kind = "fire", role = "team", room = room, title = "FIRE: " + str(ROOM_NAMES[room]),
+			time_left = -1.0, duration = -1.0, work_time = -1.0, repair = false}
+	_next_id += 1
+	state.events.append(e)
+	Events.event_started.emit(e)
+	_say("FIRE IN THE %s! Extinguishers: HUB / BRIDGE" % ROOM_NAMES[room])
+	state.stats.last_fire = why
+	_emit()
+
+
+func _add_flame(room: String) -> void:
+	var p := _floor_point(room)
+	state.fires.append({id = _next_id, room = room, x = p.x, y = p.y})
+	_next_id += 1
+
+
+## Fires grow, spread through the doors and knock out the room's station if left burning.
+func _tick_fire(dt: float) -> void:
+	if state.fires.is_empty():
+		return
+	var rooms := {}
+	for f: Dictionary in state.fires:
+		rooms[f.room] = int(rooms.get(f.room, 0)) + 1
+	for room: String in rooms:
+		_room_burn[room] = float(_room_burn.get(room, 0.0)) + dt
+		var role := _room_role(room)
+		if role != "" and role != "team" and float(_room_burn[room]) >= FIRE_KNOCKOUT:
+			_room_burn[room] = 0.0
+			if role not in state.offline:
+				state.stats.fire_knockouts = int(state.stats.fire_knockouts) + 1
+				_knock_offline(role, "Fire damage: " + str(ROOM_NAMES[room]).to_lower())
+				_say("FIRE burned out the %s station" % role.to_upper())
+		_room_grow[room] = float(_room_grow.get(room, FIRE_GROW)) - dt
+		if float(_room_grow[room]) <= 0.0:
+			_room_grow[room] = FIRE_GROW
+			if int(rooms[room]) < FIRE_MAX:
+				_add_flame(room)
+		if int(rooms[room]) >= FIRE_SPREAD_AT:
+			_room_spread[room] = float(_room_spread.get(room, FIRE_SPREAD)) - dt
+			if float(_room_spread[room]) <= 0.0:
+				_room_spread[room] = FIRE_SPREAD
+				var next := _neighbour(room)
+				if next != "":
+					_start_fire(next, "spread from the " + str(ROOM_NAMES[room]).to_lower())
+		else:
+			_room_spread[room] = FIRE_SPREAD
+
+
+## One flame put out. The last one in a room ends that room's fire ticket.
+func _douse(id: int) -> void:
+	for f: Dictionary in state.fires.duplicate():
+		if int(f.id) != id:
+			continue
+		state.fires.erase(f)
+		var room := str(f.room)
+		var left := _flames_in(room)
+		if left > 0:
+			_say("Flame out - %d more in the %s" % [left, ROOM_NAMES[room]])
+			return
+		_room_burn.erase(room)
+		_room_grow.erase(room)
+		_room_spread.erase(room)
+		for e: Dictionary in state.events.duplicate():
+			if e.kind == "fire" and e.get("room", "") == room:
+				_remove_event(e)
+		_say("FIRE IN THE %s IS OUT" % ROOM_NAMES[room])
+		return
+
+
+## A random neighbouring room (through a door) that is not burning yet, or "".
+func _neighbour(room: String) -> String:
+	_load_layout()
+	var out := []
+	for d: Dictionary in _layout.get("doors", []):
+		var ends := str(d.get("id", "")).split("-")
+		if ends.size() == 2 and room in ends:
+			var other := ends[1] if ends[0] == room else ends[0]
+			if _flames_in(other) == 0:
+				out.append(other)
+	return out[_rng.randi() % out.size()] if not out.is_empty() else ""
+
+
+static func _room_role(room: String) -> String:
+	for role: String in STATION_ROOMS:
+		if STATION_ROOMS[role] == room:
+			return role
+	return ""
+
+
+# --- frozen propellant -------------------------------------------------------------------------
+
+## Sunlight at the ship (1 at Earth -> ~0.43 at Mars), the same transfer-ellipse model as ShipLighting.
+func _sunlight() -> float:
+	var p := clampf(ShipLighting.progress_of(state), 0.0, 1.0)
+	var e := ShipLighting.TRANSFER_E
+	var r := ShipLighting.TRANSFER_A * (1.0 - e * e) / (1.0 + e * cos(PI * p))
+	return 1.0 / (r * r)
+
+
+## Temperature the tanks drift towards right now: ~20 C in full sunlight, ~-8 C at Mars, + heater, + parts.
+func _tank_equilibrium() -> float:
+	return -30.0 + 50.0 * _sunlight() + float(params.get("tank_warm", 0.0)) \
+			+ (HEATER_GAIN if state.loads.heater else 0.0)
+
+
+func _tick_tanks(dt: float) -> void:
+	var eq := _tank_equilibrium()
+	var t: float = state.tank_temp
+	t += (eq - t) * (1.0 - exp(-dt / TANK_TAU))
+	state.tank_temp = t
+	if state.fuel_frozen:
+		state.stats.frozen_time = float(state.stats.frozen_time) + dt
+	if not state.fuel_frozen and t <= FREEZE_C:
+		state.fuel_frozen = true
+		state.stats.freezes = int(state.stats.freezes) + 1
+		for e: Dictionary in state.events.duplicate():
+			if e.kind == "freeze":
+				_grade_missed(e)
+				_remove_event(e)
+		_say("FUEL LINES FROZEN! No burns - ENGINEER: HEATER ON!")
+		_emit()
+	elif state.fuel_frozen and t >= THAW_C:
+		state.fuel_frozen = false
+		_say("Fuel lines thawed - burns work again")
+		_emit()
+	# Warm again with the heater still on: it is now just burning power (and heating the bus).
+	if state.loads.heater and t >= WARM_C and not _warm_said:
+		_warm_said = true
+		_say("Tanks warm (%d C) - Engineer: heater can go OFF" % roundi(t))
+	elif not state.loads.heater:
+		_warm_said = false
+	# The Engineer's ticket: open while the tanks are cooling towards freezing (or frozen) with the heater off.
+	var cooling := t < COLD_C and eq < FREEZE_C
+	var need: bool = not state.loads.heater and (state.fuel_frozen or cooling)
+	var ticket := {}
+	for e: Dictionary in state.events:
+		if e.kind == "freeze":
+			ticket = e
+	if need:
+		var eta := -1.0
+		if not state.fuel_frozen:
+			eta = TANK_TAU * log(maxf(t - eq, 0.01) / maxf(FREEZE_C - eq, 0.01))   # seconds until FREEZE_C
+		if ticket.is_empty():
+			ticket = {id = _next_id, kind = "freeze", role = "engineer", time_left = eta, duration = eta,
+					title = "Fuel frozen - heater ON" if state.fuel_frozen else "Fuel lines freezing",
+					work_time = 1.0, repair = false}
+			_next_id += 1
+			state.events.append(ticket)
+			Events.event_started.emit(ticket)
+			if not state.fuel_frozen:
+				_say("FUEL LINES %d C AND COOLING - ENGINEER: HEATER ON!" % roundi(t))
+			_emit()
+		elif (float(ticket.duration) < 0.0) != state.fuel_frozen:
+			_remove_event(ticket)   # froze (or thawed) under it: next tick opens the right kind
+		else:
+			ticket.time_left = minf(eta, float(ticket.duration)) if eta >= 0.0 else -1.0
+	elif not ticket.is_empty():
+		if state.loads.heater:
+			_grade(ticket)   # switched on by hand at the Engineer station: counts too
+		_remove_event(ticket)
+		_emit()
+
+
+func _refuse_if_frozen() -> bool:
+	if not state.get("fuel_frozen", false):
+		return false
+	_say("FUEL FROZEN (%d C) - ENGINEER: HEATER ON!" % roundi(state.tank_temp))
+	_emit()
+	return true
+
+
+## A station in a burning room can't be used ("TOO HOT"). Returns true (and says why) if refused.
+func _refuse_if_burning(role: String) -> bool:
+	var room: String = STATION_ROOMS.get(role, "")
+	if room == "" or _flames_in(room) == 0:
+		return false
+	_say("TOO HOT - FIRE IN THE %s!" % ROOM_NAMES[room])
+	_emit()
+	return true
+
+
 ## After safe mode or a blackout everything is off. Instead of switching each load back on, the
 ## Engineer gets one ticket: hold USE once = instruments + transmitter ON (the real-world version is
 ## the ground team sending a single safe-mode recovery sequence). Missing it breaks nothing - the
@@ -761,6 +1169,7 @@ func _spawn_power_up(reason: String) -> void:
 
 
 func _expire(event: Dictionary) -> void:
+	_grade_missed(event)
 	_remove_event(event)
 	if event.kind == "power_up":
 		_say("Systems still OFF - Engineer: switch instruments + transmitter on by hand")
@@ -794,21 +1203,29 @@ func _on_action(role: String, action: Dictionary) -> void:
 	match action.get("type", ""):
 		"resolve":
 			_resolve(int(action.get("id", -1)))
-		"burn":
-			if _refuse_if_offline(role):
+		"burn":   # spools up first (BRACE), fires in _tick_brace
+			if _refuse_if_offline(role) or _refuse_if_burning(role) or _refuse_if_frozen():
 				return
-			state.fuel = maxf(state.fuel - params.burn_fuel, 0.0)
-			state.power = maxf(state.power - 3.0, 0.0)
-			if state.dust.phase == "warning":   # steering around the debris cloud
-				var step := COURSE_STEP * (-1.0 if action.get("dir", "") == "left" else 1.0)
-				state.dust.course = clampf(float(state.dust.course) + step, -1.2, 1.2)
-				var clear := _dust_density(state.dust) <= 0.0
-				_say("NAV: heading %+.0f deg - %s" % [float(state.dust.course) * DEG_PER_UNIT,
-						"CLEAR OF THE DEBRIS" if clear else "still in the field"])
+			if float(state.brace.time_left) >= 0.0:
+				_say("NAV: burn already spooling - BRACE!")
 			else:
-				_say("NAV: burn " + str(action.get("dir", "")))
+				var dir := str(action.get("dir", ""))
+				state.brace = {time_left = BRACE_TIME, duration = BRACE_TIME, dir = dir}
+				_say("NAV: %s BURN IN %.1f s - EVERYONE BRACE!" % [dir.to_upper(), BRACE_TIME])
+		"ping":   # a crew call-out: one marker per player, newest replaces their old one
+			var from := str(action.get("from", ""))
+			state.pings = state.pings.filter(func(p: Dictionary) -> bool: return p.from != from)
+			state.pings.append({id = _next_id, from = from, x = float(action.get("x", 0)), y = float(action.get("y", 0)),
+					text = str(action.get("text", "HELP!")).left(24), role = str(action.get("role", "")),
+					time_left = PING_TIME})
+			_next_id += 1
+			while state.pings.size() > MAX_PINGS:
+				state.pings.pop_front()
+		"douse":   # a crew member with an extinguisher put out one flame
+			_douse(int(action.get("id", -1)))
 		"drop_tool":
-			state.toolboxes.append({id = _next_id, x = float(action.get("x", 0)), y = float(action.get("y", 0))})
+			state.toolboxes.append({id = _next_id, x = float(action.get("x", 0)), y = float(action.get("y", 0)),
+					kind = str(action.get("kind", "toolbox"))})
 			_next_id += 1
 		"take_tool":   # first come, first served (co-op): the crew member checks the list before taking
 			for t: Dictionary in state.toolboxes.duplicate():
@@ -835,7 +1252,7 @@ func _on_action(role: String, action: Dictionary) -> void:
 				_end_dust(int(action.get("hits", 0)), float(action.get("thrust", 0.0)), float(action.get("turning", 0.0)))
 				return
 		"toggle_load":
-			if _refuse_if_offline(role):
+			if _refuse_if_offline(role) or _refuse_if_burning(role):
 				return
 			if state.blackout > 0.0:
 				_say("NO POWER: solar bus tripped (%ds)" % ceili(state.blackout))
@@ -856,6 +1273,9 @@ func _on_action(role: String, action: Dictionary) -> void:
 							_remove_event(e)
 		"downlink":
 			_downlinking = bool(action.get("on", false))
+			if _downlinking and _refuse_if_burning("comms"):
+				_downlinking = false
+				return
 			if _downlinking and not _can_downlink():
 				if "comms" in state.offline:
 					_say("COM: antenna OFFLINE")
@@ -876,18 +1296,26 @@ func _resolve(id: int) -> void:
 	for event: Dictionary in state.events:
 		if event.id != id:
 			continue
+		if event.kind == "fire":
+			return  # not workable: each flame is put out with an extinguisher
+		if _refuse_if_burning(str(event.role)):
+			return  # ticket stays: put the fire out first
 		if event.repair:
 			state.offline.erase(event.role)
 			_say("%s back ONLINE" % event.role.to_upper())
 		elif event.kind == "dust":
 			return  # not workable: it is dodged at the Bridge
 		elif event.kind == "moi":
+			if _refuse_if_frozen():
+				return   # ticket stays: thaw the fuel, then brake
 			if state.power < MOI_POWER:
 				_say("MOI: battery too low for the burn (%d%% < %d%%) - ENGINEER: switch loads off!" % [int(state.power), int(MOI_POWER)])
 				return   # ticket stays: try again once there is power
 			var need := Orbits.moi_fuel(state.design)   # mission base x chosen orbit x tank
 			state.stats.fuel_at_moi = state.fuel
+			_grade(event)
 			_remove_event(event)
+			_shove(Vector2.RIGHT, SHOVE_BRAKE)   # braking: everyone keeps flying forward
 			if state.fuel >= need:
 				state.fuel -= need
 				state.power = maxf(state.power - MOI_POWER, 0.0)
@@ -898,6 +1326,13 @@ func _resolve(id: int) -> void:
 			return
 		elif event.kind == "fuel_leak":
 			_say("LEAK SEALED - it cost %d%% fuel" % int(state.stats.leak_fuel))
+		elif event.kind == "freeze":   # the Engineer switches the heater on from the ticket
+			if state.blackout > 0.0 or state.cme.get("safe", false):
+				_say("NO POWER for the heater - %s" % ("blackout" if state.blackout > 0.0 else "safe mode"))
+				_emit()
+				return   # ticket stays
+			state.loads.heater = true
+			_say("HEATER ON - warming the fuel lines (%d C)" % roundi(state.tank_temp))
 		elif event.kind == "power_up":
 			if state.blackout > 0.0 or state.cme.get("safe", false):
 				_say("Can't power up yet - %s" % ("solar bus still tripped" if state.blackout > 0.0 else "safe mode until the storm passes"))
@@ -936,6 +1371,7 @@ func _resolve(id: int) -> void:
 				_say("+%d SCIENCE stored - send it home from the COMMS ROOM (top left) in a DSN pass" % int(gained))
 		else:
 			_say("Fixed: " + event.title)
+		_grade(event)
 		_remove_event(event)
 		return
 
