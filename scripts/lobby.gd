@@ -286,6 +286,8 @@ func _draw_content() -> void:
 	var keys := [["ENTER", "START FLIGHT"], ["A/D", "CHOOSE"], ["ESC", "CLOSE ROOM"]] if host \
 			else [["ESC", "LEAVE ROOM"]]
 	MenuKit.key_hints(c, 240 if not host else 160, 250, keys, 6)
+	# Build fingerprint (networked code only): host and friends must show the same one to play together.
+	UiKit.text_r(c, 474, 266, "BUILD " + Network.build_version().to_upper(), 6, UiKit.FAINT, 0)
 	if _notice != "" and _notice_t > 0.0:
 		MenuKit.toast(c, 240, 244, _notice, UiKit.WARN, clampf(_notice_t * 4.0, 0.0, 1.0))
 
