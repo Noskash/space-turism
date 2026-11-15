@@ -472,10 +472,10 @@ func _process(delta: float) -> void:
 		for member in _crew.get_children():
 			if member is CrewMember:
 				var last: Vector2 = _crew_last.get(member, member.position)
-				if member.position.distance_to(last) > 0.3 and _every("dust_%d" % member.get_instance_id(), 0.14 if member.running else 0.22, delta):
+				# Footstep SOUNDS are CrewMember's (_footsteps); this is only the dust. Nobody on a spacewalk.
+				if not member.eva and member.position.distance_to(last) > 0.3 						and _every("dust_%d" % member.get_instance_id(), 0.14 if member.running else 0.22, delta):
 					_dust.append({p = member.position + Vector2(_rng.randf_range(-2, 2), -1),
 							v = Vector2(_rng.randf_range(-6, 6), -3), life = 0.35, max = 0.35})
-					Sfx.play("step", _rng.randf_range(0.85, 1.25), -8.0 if member.remote else 0.0)
 				seen[member] = member.position
 		_crew_last = seen  # forget crew that left
 

@@ -374,6 +374,49 @@ def perfect():
     return seq(*[tone(note(s), note(s), 0.05, volume=0.25, duty=0.25) for s in (12, 16, 19, 24)])
 
 
+# --- footsteps + spacewalk (appended: older WAVs stay byte-identical) ---------------------------
+def step_walk():
+    """Boot on the metal deck: soft low thud + a little grit."""
+    return mix(tone(150, 70, 0.06, wave_fn=tri, volume=0.5, curve=0.5), noise(0.03, volume=0.22, smooth=0.55, step=2))
+
+
+def step_run():
+    """Running: heavier thud + a short metallic clink of the deck plate."""
+    return mix(tone(180, 75, 0.07, wave_fn=tri, volume=0.6, curve=0.5), noise(0.04, volume=0.32, smooth=0.35, step=3),
+               tone(1500, 1200, 0.025, wave_fn=tri, volume=0.07))
+
+
+def step_eva():
+    """Magnetic boot on the hull, heard only through the suit (no air outside): dull muffled clunk."""
+    return mix(tone(95, 50, 0.1, wave_fn=tri, volume=0.55, curve=0.5), noise(0.07, volume=0.25, smooth=0.95))
+
+
+def breath():
+    """Inside the helmet, 3.2 s seamless: slow inhale, exhale, pause (starts and ends silent)."""
+    total = n(3.2)
+    out, lp = [], 0.0
+    for i in range(total):
+        t = i / RATE
+        if t < 1.1:
+            a = math.sin(math.pi * t / 1.1) * 0.8
+        elif t < 2.5:
+            a = math.sin(math.pi * (t - 1.1) / 1.4)
+        else:
+            a = 0.0
+        lp = lp * 0.82 + rng.uniform(-1, 1) * 0.18
+        out.append(lp * 0.5 * a)
+    return out
+
+
+def airlock():
+    """Airlock cycling: hatch clunk, then the air hisses out (falling), then a click."""
+    clunk = mix(tone(120, 60, 0.12, wave_fn=tri, volume=0.6), noise(0.05, volume=0.3, step=4))
+    hiss_out = noise(0.9, volume=0.4, smooth=0.3, attack=0.02)
+    hiss_out = [x * (1.0 - i / len(hiss_out)) ** 1.5 for i, x in enumerate(hiss_out)]
+    click = tone(900, 900, 0.03, wave_fn=square, volume=0.15, duty=0.25)
+    return seq(clunk, hiss_out, click)
+
+
 SOUNDS = {
     "ui_hover": ui_hover, "ui_click": ui_click,
     "step": step, "dock": dock, "undock": undock, "select": select, "toggle": toggle,
@@ -388,6 +431,7 @@ SOUNDS = {
     "hiss": hiss, "clank": clank,
     "klaxon": klaxon, "whoosh": whoosh, "ignite": ignite, "fire": fire, "spray": spray,
     "ping": ping, "perfect": perfect,
+    "step_walk": step_walk, "step_run": step_run, "step_eva": step_eva, "breath": breath, "airlock": airlock,
 }
 
 if __name__ == "__main__":

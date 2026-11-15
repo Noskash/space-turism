@@ -61,6 +61,19 @@ var _shove_v := Vector2.ZERO
 var _shove_left := 0.0
 var _shove_seq := -1
 var _ping_cd := 0.0
+## Footsteps: one step sound every STRIDE px walked (alternating feet). Tuned to the walk animation:
+## 8 fps x 4 frames = 4 steps/s at SPEED 80 -> 20 px; running plays the cycle 1.6x faster at 135 px/s.
+const STRIDE := 20.0
+const STRIDE_RUN := 21.0
+var _stride := 0.0
+var _left_foot := false
+var _step_from := Vector2.ZERO
+## On a spacewalk (EvaView, ShipEva): hidden on the interior map; ShipEva draws the suit on the hull.
+## Synced as snapshot[10]. While outside, `position` is the astronaut's spot mapped to map coordinates.
+var eva := false:
+	set(value):
+		eva = value
+		visible = not value
 ## Network puppet: driven by snapshots from its owner instead of the keyboard.
 var remote := false
 ## Draw a small marker over the head (which one is me, in co-op).
@@ -96,6 +109,7 @@ func _ready() -> void:
 	collider.position = Vector2(0, -2)  # footprint just above the feet
 	add_child(collider)
 	_apply_skin()
+	_step_from = position
 	_tool = Node2D.new()
 	_tool.name = "Toolbox"
 	_tool.z_index = 1  # over the skin sprite
@@ -150,7 +164,26 @@ func _physics_process(delta: float) -> void:
 			_process_docked()
 		else:
 			_process_walking()
+	_footsteps()
 	queue_redraw()
+
+
+## Boots on the deck. Remote crew are a bit quieter; no steps while thrown by a burn, docked or outside
+## (vacuum: EvaView plays the suit's own muffled steps for the spacewalker).
+func _footsteps() -> void:
+	var moved := position.distance_to(_step_from)
+	_step_from = position
+	if moved < 0.05 or moved > 12.0 or eva or _docked or _shove_left > 0.0:
+		if moved < 0.05:
+			_stride = minf(_stride, STRIDE * 0.5)   # first step comes quickly after standing still
+		return
+	_stride += moved
+	var stride := STRIDE_RUN if running else STRIDE
+	if _stride >= stride:
+		_stride -= stride
+		_left_foot = not _left_foot
+		var pitch := (1.05 if _left_foot else 0.95) * randf_range(0.94, 1.06)
+		Sfx.play("step_run" if running else "step_walk", pitch, -6.0 if remote else 0.0)
 
 
 func _process_walking() -> void:
@@ -191,6 +224,9 @@ func _process_walking() -> void:
 		Events.action_requested.emit("team", {type = "take_tool", id = int(fire.extinguisher_near(global_position).id)})
 		has_extinguisher = true
 		Sfx.play("clank", 1.5)
+	elif _station == null and world_actions and not hands_full and ShipEva.current 			and ShipEva.current.airlock_in_reach(global_position) and use:
+		ShipEva.current.start_eva(self)   # suit up: EvaView takes over until we come back in
+		return
 	elif _station == null and world_actions and RadioSet.in_reach(global_position) and use:
 		Events.action_requested.emit("team", {type = "radio"})
 		Sfx.play("toggle")
@@ -406,10 +442,10 @@ func role_color() -> Color:
 # --- network ---------------------------------------------------------------------------
 
 ## What other peers need to draw this crew member:
-## [pos, facing, moving, special, docked, skin, running, toolbox, extinguisher, spraying].
+## [pos, facing, moving, special, docked, skin, running, toolbox, extinguisher, spraying, eva].
 func snapshot() -> Array:
 	return [position, _facing, _anim_moving, _anim_special,
-			_docked.role if _docked else "", skin, running, has_toolbox, has_extinguisher, spraying]
+			_docked.role if _docked else "", skin, running, has_toolbox, has_extinguisher, spraying, eva]
 
 
 func apply_snapshot(data: Array) -> void:
@@ -427,6 +463,9 @@ func apply_snapshot(data: Array) -> void:
 	if ext != has_extinguisher:
 		has_extinguisher = ext
 	spraying = data.size() > 9 and data[9]
+	var outside: bool = data.size() > 10 and data[10]
+	if outside != eva:
+		eva = outside
 	if data[5] != skin:
 		skin = data[5]
 	var docked_role: String = data[4]
@@ -515,7 +554,7 @@ func _draw_tag() -> void:
 		top -= 2
 	if display_name == "":
 		return
-	var label := display_name.to_upper()
+	var label := NetText.player(display_name)   # "Игрок 2" -> "PLAYER 2": the pixel font has no Cyrillic (web has no fallback)
 	var w := UiKit.text_w(label, 6) + 6
 	var h := maxf(9.0, UiKit.line_h(6) + 2)
 	var r := Rect2(roundf(-w / 2.0), top - h, roundf(w), h)

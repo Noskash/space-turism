@@ -167,9 +167,72 @@ var _room_grow := {}               # room -> seconds to its next flame
 var _room_spread := {}             # room -> seconds to lighting a neighbour
 var _heat_warned := false
 
+# Spacewalks (EVA; ShipEva + EvaView). SIMPLIFIED, real basis: STS-120 2007 (a torn ISS solar wing fixed
+# on a spacewalk), Galileo 1991 (high-gain dish never opened - no crew to free it), ISS 2013 (emergency
+# spacewalk for an ammonia coolant leak). A fault on the OUTSIDE of the ship opens a "team" ticket with no
+# timer that hurts until someone suits up at the Bridge airlock, walks the hull and holds USE on it.
+const EVA_FAULTS := {
+	solar_wing = {title = "EVA: solar wing jammed",
+			say = "SOLAR WING JAMMED - half the solar power! Suit up at the BRIDGE AIRLOCK and free it"},
+	dish = {title = "EVA: antenna dish jammed",
+			say = "ANTENNA DISH JAMMED - downlink at a third! Suit up at the BRIDGE AIRLOCK"},
+	radiator = {title = "EVA: radiator leaking",
+			say = "RADIATOR LEAKING COOLANT - the power bus heats up! Suit up at the BRIDGE AIRLOCK"},
+}
+const EVA_FIRST := 38.0
+const EVA_GAP := Vector2(60.0, 80.0)
+const EVA_ON_HIT := 0.3            # chance a debris / meteoroid hit that breaches nothing damages the outside
+const EVA_SOLAR := 0.5             # solar wing jammed: share of the panels' power left
+const EVA_DISH := 0.35             # dish jammed: share of the downlink rate left
+const EVA_RADIATOR_W := 40.0       # radiator leaking: the bus heats as if loads drew 40 W more (base kit: fire in ~40 s)
+const EVA_WORK := 3.0              # seconds of holding USE at the fault (EvaView)
+const EVA_STORM := 1.5             # radiation wave on a spacewalker: x the "caught outside" dose
+var _eva_timer := EVA_FIRST
+
+# Crew credits (MissionReport CREW CREDITS page): who did what, per crew key ("P1" / "Crew_<peer id>").
+# The host's NetSync stamps client actions with `by`; the host's own actions use `local_key` (set by the game).
+# Juice + teamwork lesson only: these never change the mission score (hard rule 4).
+var local_key := "P1"
+var _actor := ""                   # crew key of the action being applied right now
+var _downlinker := ""              # who is holding the downlink (credited with what reaches Earth)
+
+# Flight plan (Forecast + PlanBoard at the Mission Hub holo-table). state.forecast = what is coming on the way
+# (real named comet trails + asteroids, the cold zone, the solar conjunction), state.plan = {forecast id: crew key}.
+# Planned ahead = handled for the crew when the day comes (stored commands); unplanned = it happens to them.
+# Missions with an end (cruise_days > 0) use it; endless tests keep the old debris timer.
+const PLAN_LEAD := 6.0             # days: can't plan something closer than this (too late to upload commands)
+const PLAN_BURN_FUEL := 2.0        # % fuel for a planned dodge burn of a comet trail (cheaper than an emergency)
+const FLYBY_TIME := 14.0           # asteroid flyby window for the Scientist (x pace)
+const FLYBY_WORK := 2.5
+const FLYBY_SCIENCE := 2.0         # x a normal observation
+var _forecast_on := false
+
+# Gentle start (Overcooked-style difficulty ramp): no tickets for QUIET_START s, ticket gaps shrink from x
+# RAMP_START to x1 over RAMP_TIME s, the first hazards never come before their floor, and every mechanic is
+# introduced on its own: a kind seen for the first time waits until NEW_GAP s after the previous first.
+const QUIET_START := 10.0
+const RAMP_START := 1.8
+const RAMP_TIME := 60.0
+const FIRST_FLOOR := {storm = 28.0, debris = 45.0, eva = 55.0}
+const NEW_GAP := 14.0
+var _elapsed := 0.0
+var _introduced := {}              # kind -> true once it has happened
+var _last_intro := -100.0
+
 
 func _on(flag: String) -> bool:
 	return bool(_sim.get(flag, true))
+
+
+## Gentle start: may `kind` happen now? Seen before = yes; a first time waits NEW_GAP s after the last first.
+func _intro_ok(kind: String) -> bool:
+	return _introduced.has(kind) or _elapsed - _last_intro >= NEW_GAP
+
+
+func _introduce(kind: String) -> void:
+	if not _introduced.has(kind):
+		_introduced[kind] = true
+		_last_intro = _elapsed
 
 
 func _arriving() -> bool:
@@ -193,9 +256,13 @@ func start(design: Dictionary) -> void:
 		cruise_days = trip
 	if cruise_days > 0.0:
 		_days_per_second = cruise_days / maxf(cruise_seconds * _pace, 1.0)
-	_cme_timer = float(_sim.get("storm_first", CME_FIRST)) * _pace
-	_dust_timer = float(_sim.get("debris_first", DUST_FIRST)) * _pace
-	_event_timer = 4.0 * _ticket_pace
+	_cme_timer = maxf(float(_sim.get("storm_first", CME_FIRST)), FIRST_FLOOR.storm) * _pace
+	_dust_timer = maxf(float(_sim.get("debris_first", DUST_FIRST)), FIRST_FLOOR.debris) * _pace
+	_eva_timer = maxf(float(_sim.get("eva_first", EVA_FIRST)), FIRST_FLOOR.eva) * _pace
+	_event_timer = QUIET_START * _ticket_pace
+	_elapsed = 0.0
+	_introduced = {}
+	_last_intro = -100.0
 	state = {
 		mission = Missions.current_id(),
 		cruise_days = cruise_days,          # 0 = endless (sandbox)
@@ -206,7 +273,9 @@ func start(design: Dictionary) -> void:
 		stats = {storms = 0, safe_modes = 0, disabled = 0, knockouts = 0, debris_hits = 0, breaches = 0,
 				big_storm = "", fuel_at_moi = -1.0, caught_outside = 0, sheltered = 0,
 				leaks = 0, leak_fuel = 0.0, leak_day = -1.0, sick = [],
-				fires = 0, fire_overload = 0, fire_knockouts = 0, freezes = 0, frozen_time = 0.0},
+				fires = 0, fire_overload = 0, fire_knockouts = 0, freezes = 0, frozen_time = 0.0,
+				eva_faults = 0, eva_fixes = 0, eva_open = 0.0, eva_storm = 0,
+				plan_made = 0, plan_missed = 0, plan_failed = 0, flybys = 0},
 		crew = {},              # key -> {astronaut, dose (mSv), sick, room} (set_crew + _tick_crew)
 		day = 0.0,
 		power = 80.0,
@@ -238,8 +307,11 @@ func start(design: Dictionary) -> void:
 		grade_log = [],         # last few [{seq, id, grade, role, streak}] (stamps; read entries with seq > seen)
 		fires = [],             # [{id, room, x, y}] flames (put out with an extinguisher)
 		bus_heat = 0.0,         # % power bus overheating (draw > solar); 100 = fire
+		team = {},              # crew key -> {tickets, perfect, repairs, burns, ...} (crew credits, see _credit)
 		tank_temp = 20.0,       # propellant tank / fuel line temperature, C (SIMPLIFIED)
 		fuel_frozen = false,    # below FREEZE_C: no burns until thawed above THAW_C
+		forecast = [],          # [{id, kind, name, fact, day, role, done, result}] (Forecast.make, see _make_forecast)
+		plan = {},              # forecast id (String) -> crew key who planned it (PlanBoard)
 		last_action = "",
 		action_seq = 0,
 		design = design,
@@ -253,6 +325,7 @@ func start(design: Dictionary) -> void:
 				title = "Launch damage: " + roles[i], time_left = -1.0, duration = -1.0,
 				work_time = params.repair_work, repair = true})
 		_next_id += 1
+	_make_forecast(cruise_seconds * _pace)
 	if not Events.action_requested.is_connected(_on_action):
 		Events.action_requested.connect(_on_action)
 	_emit()
@@ -262,6 +335,7 @@ func tick(dt: float) -> void:
 	if state.is_empty() or state.lost != "" or not state.finished.is_empty():
 		return
 	var day_before: float = state.day
+	_elapsed += dt
 	state.day += dt * _days_per_second
 	if state.cruise_days > 0.0:
 		state.day = minf(state.day, state.cruise_days)
@@ -278,6 +352,7 @@ func tick(dt: float) -> void:
 	_tick_data(dt)
 	_tick_conjunction(dt)
 	_tick_dsn(dt)
+	_tick_forecast()
 	_tick_events(dt)
 	if _on("storms"):
 		_tick_cme(dt)
@@ -285,6 +360,8 @@ func tick(dt: float) -> void:
 		_tick_dust(dt)
 	if _on("hull"):
 		_tick_oxygen(dt)
+	if _on("eva"):
+		_tick_eva(dt)
 	_tick_moi(dt)
 	_emit_timer -= dt
 	if _emit_timer <= 0.0:
@@ -303,7 +380,7 @@ func _tick_power(dt: float) -> void:
 	for load: String in LOADS:
 		if state.loads[load]:
 			draw += params[load + "_w"]
-	var gen: float = params.solar_w
+	var gen: float = _solar_w()
 	if state.cme.get("safe", false):   # safe mode: everything but the base load stays off
 		for load: String in LOADS:
 			state.loads[load] = false
@@ -341,9 +418,10 @@ func _tick_data(dt: float) -> void:
 	else:
 		_tx_warned = false
 	if _downlinking and _can_downlink():
-		var sent := minf(params.downlink_rate * dt, _data_units)
+		var sent := minf(params.downlink_rate * (EVA_DISH if _eva_open("dish") else 1.0) * dt, _data_units)
 		_data_units -= sent
 		state.science_sent += sent
+		_credit_to(_downlinker, "sent", sent)
 	state.data = _data_units / storage * 100.0
 	state.science_stored = _data_units
 
@@ -352,6 +430,9 @@ func _tick_dsn(dt: float) -> void:
 	_dsn_clock += dt
 	if state.conjunction.phase == "active":   # the Sun blocks the radio: no station can hear us
 		state.dsn = {site = "", time_left = state.conjunction.time_left}
+		return
+	if state.conjunction.phase == "warning" and _planned_kind("conjunction"):   # extra DSN time booked
+		state.dsn = {site = DSN_SITES[0], time_left = state.conjunction.time_left}
 		return
 	var pass_time: float = params.dsn_pass
 	var period := pass_time + DSN_GAP
@@ -369,7 +450,8 @@ func _tick_dsn(dt: float) -> void:
 func _tick_events(dt: float) -> void:
 	_event_timer -= dt
 	if _event_timer <= 0.0:
-		_event_timer = _rng.randf_range(TICKET_GAP.x, TICKET_GAP.y) * _ticket_pace
+		var ramp := lerpf(RAMP_START, 1.0, clampf(_elapsed / RAMP_TIME, 0.0, 1.0))   # gentle start
+		_event_timer = _rng.randf_range(TICKET_GAP.x, TICKET_GAP.y) * _ticket_pace * ramp
 		if state.cme.phase == "" and state.dust.phase not in ["stream", "flying"] and not _arriving():
 			_spawn_random_event()
 	for event: Dictionary in state.events.duplicate():
@@ -400,7 +482,7 @@ func _spawn_random_event() -> void:
 	}
 	var total := 0.0
 	for k: String in weights.keys():
-		if busy.has(EVENT_TYPES[k].role):
+		if busy.has(EVENT_TYPES[k].role) or not _intro_ok(k):
 			weights.erase(k)
 		else:
 			total += weights[k]
@@ -413,6 +495,7 @@ func _spawn_random_event() -> void:
 		if roll <= 0.0:
 			kind = k
 			break
+	_introduce(kind)
 	var info: Dictionary = EVENT_TYPES[kind]
 	var duration: float = info.duration * _pace   # more time to walk over with fewer players
 	var event := {
@@ -446,7 +529,8 @@ func _tick_cme(dt: float) -> void:
 	match cme.phase:
 		"":
 			_cme_timer -= dt
-			if _cme_timer <= 0.0 and not _arriving():
+			if _cme_timer <= 0.0 and not _arriving() and _intro_ok("storm"):
+				_introduce("storm")
 				_start_cme()
 		"warning":
 			cme.time_left -= dt
@@ -563,23 +647,11 @@ func _tick_dust(dt: float) -> void:
 	var dust: Dictionary = state.dust
 	match dust.phase:
 		"":
+			if _forecast_on:
+				return   # comet crossings come from the forecast (_tick_forecast)
 			_dust_timer -= dt
-			if _dust_timer <= 0.0 and state.cme.phase == "" and not _arriving():
-				var warn: float = DUST_WARN + float(params.dust_warning)
-				# What the minigame gets from the design (sent in the state, so clients know too).
-				var side := 1.0 if _rng.randf() < 0.5 else -1.0
-				state.dust = {phase = "warning", time_left = warn, duration = warn, hits = 0,
-						wheels = bool(params.steer_free), tracker = float(params.dust_warning) > 0.0,
-						mass = float(params.mass), hull = float(state.hull),
-						cloud_y = side * _rng.randf_range(0.0, 0.25), cloud_w = CLOUD_W, course = 0.0,
-						density = 1.0}
-				var e := {id = _next_id, kind = "dust", role = "navigator", title = "Comet debris",
-						time_left = warn + PILOT_WAIT, duration = warn + PILOT_WAIT, work_time = -1.0, repair = false}
-				_next_id += 1
-				state.events.append(e)
-				Events.event_started.emit(e)
-				_say("DEBRIS ON RADAR - NAVIGATOR: STEER AROUND IT OR FLY THROUGH")
-				_emit()
+			if _dust_timer <= 0.0 and state.cme.phase == "" and not _arriving() and _intro_ok("debris"):
+				_start_dust("")
 		"warning", "stream", "flying":
 			dust.time_left -= dt
 			for e: Dictionary in state.events:
@@ -602,6 +674,28 @@ func _tick_dust(dt: float) -> void:
 					_end_dust(maxi(roundi(UNPILOTED_HITS * float(dust.density)), 1), 0.0, 0.0)   # nobody flew it
 				"flying":
 					_end_dust(2, 0.0, 0.0)                # pilot never reported back (disconnect)
+
+
+## Comet debris on the radar (`comet` = the trail's name from the forecast, "" = unnamed).
+func _start_dust(comet: String) -> void:
+	_introduce("debris")
+	var warn: float = DUST_WARN + float(params.dust_warning)
+	# What the minigame gets from the design (sent in the state, so clients know too).
+	var side := 1.0 if _rng.randf() < 0.5 else -1.0
+	state.dust = {phase = "warning", time_left = warn, duration = warn, hits = 0,
+			wheels = bool(params.steer_free), tracker = float(params.dust_warning) > 0.0,
+			mass = float(params.mass), hull = float(state.hull),
+			cloud_y = side * _rng.randf_range(0.0, 0.25), cloud_w = CLOUD_W, course = 0.0,
+			density = 1.0, name = comet}
+	var e := {id = _next_id, kind = "dust", role = "navigator",
+			title = ("Debris: " + comet) if comet != "" else "Comet debris",
+			time_left = warn + PILOT_WAIT, duration = warn + PILOT_WAIT, work_time = -1.0, repair = false}
+	_next_id += 1
+	state.events.append(e)
+	Events.event_started.emit(e)
+	_say(("%s TRAIL ON RADAR" % comet.to_upper() if comet != "" else "DEBRIS ON RADAR")
+			+ " - NAVIGATOR: STEER AROUND IT OR FLY THROUGH")
+	_emit()
 
 
 ## How much of the field the ship flies through: 0 = clear of it, 1 = dead centre.
@@ -659,6 +753,8 @@ func _impact(force: float, extra_breach: float, title: String) -> bool:
 	if _on("hull") and state.breaches.size() < MAX_BREACHES and _rng.randf() < clampf(chance, 0.05, 0.95):
 		_open_breach()
 		return true
+	if _on("eva") and _rng.randf() < EVA_ON_HIT and _open_eva_fault("", title.to_lower()):
+		return false   # the hit damaged something on the outside: a spacewalk job
 	if _on("fire") and _rng.randf() < FIRE_ON_HIT:
 		_start_fire("", title.to_lower() + " sparked it")
 		return false
@@ -784,7 +880,12 @@ func _dose_storm(shields: bool, big: bool) -> Array:
 	var outside := []
 	for key: String in state.crew:
 		var a: Dictionary = state.crew[key]
-		if shields or a.room == SHELTER_ROOM:
+		if a.room == "eva":   # on a spacewalk: no hull, no shelter, no shield bubble around the suit
+			_add_dose(key, Astronauts.dose("storm_big_outside" if big else "storm_outside") * EVA_STORM)
+			state.stats.caught_outside = int(state.stats.caught_outside) + 1
+			state.stats.eva_storm = int(state.stats.eva_storm) + 1
+			outside.append(a.astronaut)
+		elif shields or a.room == SHELTER_ROOM:
 			_add_dose(key, Astronauts.dose("storm_sheltered"))
 			state.stats.sheltered = int(state.stats.sheltered) + 1
 		else:
@@ -879,6 +980,7 @@ func _grade(event: Dictionary) -> void:
 	var grade := "perfect" if frac >= GRADE_PERFECT else ("good" if frac >= GRADE_GOOD else "late")
 	var g: Dictionary = state.grades
 	g[grade] = int(g[grade]) + 1
+	_credit(grade)
 	g.streak = int(g.streak) + 1
 	g.best = maxi(int(g.best), int(g.streak))
 	_log_grade(event, grade)
@@ -920,7 +1022,7 @@ func _load_draw() -> float:
 ## The power bus heats up while the loads draw more than the solar panels make (the battery covers
 ## the rest) and catches fire at 100%, in the room of the hungriest load. Cools when back in balance.
 func _tick_heat(dt: float) -> void:
-	var deficit := _load_draw() - float(params.solar_w)
+	var deficit := _load_draw() - _solar_w() + (EVA_RADIATOR_W if _eva_open("radiator") else 0.0)
 	if state.blackout > 0.0 or state.cme.get("safe", false):
 		deficit = 0.0   # everything is off anyway
 	var heat: float = state.bus_heat
@@ -1058,6 +1160,219 @@ static func _room_role(room: String) -> String:
 	return ""
 
 
+# --- crew credits ------------------------------------------------------------------------------
+
+## +n on the acting crew member's tally (state.team[key][stat]).
+func _credit(stat: String, n := 1.0) -> void:
+	_credit_to(_actor, stat, n)
+
+
+func _credit_to(key: String, stat: String, n: float) -> void:
+	if key == "" or state.is_empty():
+		return
+	if not state.team.has(key):
+		state.team[key] = {}
+	var t: Dictionary = state.team[key]
+	t[stat] = float(t.get(stat, 0.0)) + n
+
+
+## The game (host) reports walking and time outside every frame (the sim can't see the map).
+func note_crew(key: String, walked_px: float, eva_s: float) -> void:
+	if walked_px > 0.0:
+		_credit_to(key, "walked", walked_px)
+	if eva_s > 0.0:
+		_credit_to(key, "eva_time", eva_s)
+
+
+# --- spacewalks (EVA) ---------------------------------------------------------------------------
+
+## Solar panel power right now (a jammed wing makes half).
+func _solar_w() -> float:
+	return float(params.solar_w) * (EVA_SOLAR if _eva_open("solar_wing") else 1.0)
+
+
+func _eva_open(fault: String) -> bool:
+	for e: Dictionary in state.get("events", []):
+		if e.kind == "eva" and e.get("fault", "") == fault:
+			return true
+	return false
+
+
+## Outside faults now and then (none in a storm, a debris pass or on the final approach).
+func _tick_eva(dt: float) -> void:
+	for e: Dictionary in state.events:
+		if e.kind == "eva":
+			state.stats.eva_open = float(state.stats.eva_open) + dt
+	_eva_timer -= dt
+	if _eva_timer > 0.0:
+		return
+	if not _intro_ok("eva"):
+		return   # another new mechanic just started: try again next tick
+	_eva_timer = _rng.randf_range(EVA_GAP.x, EVA_GAP.y) * _pace
+	if state.cme.phase == "" and state.dust.phase not in ["stream", "flying"] and not _arriving():
+		_introduce("eva")
+		_open_eva_fault("", "wear and tear")
+
+
+## Opens an outside fault (`fault` "" = a random one not open yet). Returns false if none could open.
+func _open_eva_fault(fault: String, why: String) -> bool:
+	if fault == "":
+		var free: Array = EVA_FAULTS.keys().filter(func(f: String) -> bool: return not _eva_open(f))
+		if free.is_empty():
+			return false
+		fault = free[_rng.randi() % free.size()]
+	elif _eva_open(fault):
+		return false
+	var info: Dictionary = EVA_FAULTS[fault]
+	var e := {id = _next_id, kind = "eva", role = "team", fault = fault, title = info.title,
+			time_left = -1.0, duration = -1.0, work_time = EVA_WORK, repair = false, why = why}
+	_next_id += 1
+	state.events.append(e)
+	state.stats.eva_faults = int(state.stats.eva_faults) + 1
+	Events.event_started.emit(e)
+	_say(info.say)
+	_emit()
+	return true
+
+
+func _eva_fix(id: int) -> void:
+	for e: Dictionary in state.events.duplicate():
+		if int(e.id) == id and e.kind == "eva":
+			_remove_event(e)
+			_credit("eva")
+			state.stats.eva_fixes = int(state.stats.eva_fixes) + 1
+			_say("SPACEWALK: %s FIXED - head back to the airlock" % str(e.title).trim_prefix("EVA: ").to_upper())
+			return
+
+
+# --- flight plan: forecast + the holo-table plan -----------------------------------------------
+
+## Builds state.forecast for a flight with an end. `play_seconds` = the cruise in real seconds (paced).
+func _make_forecast(play_seconds: float) -> void:
+	_forecast_on = state.cruise_days > 0.0
+	if not _forecast_on:
+		return
+	var comet_days := []
+	if _on("debris"):   # the same rhythm the debris timer had: first crossing, then warning + gap
+		var t := _dust_timer
+		while t < play_seconds * 0.86:
+			comet_days.append(t * _days_per_second)
+			t += DUST_WARN + PILOT_WAIT * 0.5 + _debris_gap()
+	var conj := float(_sim.get("conjunction_at", -1.0))
+	state.forecast = Forecast.make(_rng, state.cruise_days, comet_days,
+			_cold_day() if _on("freeze") else -1.0, conj * state.cruise_days if conj > 0.0 else -1.0)
+
+
+## First day the tanks would settle below freezing without the heater (-1 = never: RTG / radiator keep them warm).
+func _cold_day() -> float:
+	var d := 0.0
+	while d < state.cruise_days:
+		var p := d / float(state.cruise_days)
+		var e := ShipLighting.TRANSFER_E
+		var r := ShipLighting.TRANSFER_A * (1.0 - e * e) / (1.0 + e * cos(PI * p))
+		if -30.0 + 50.0 / (r * r) + float(params.get("tank_warm", 0.0)) < FREEZE_C:
+			return d
+		d += 1.0
+	return -1.0
+
+
+func _is_planned(item: Dictionary) -> bool:
+	return state.plan.has(str(item.id))
+
+
+func _planned_kind(kind: String) -> bool:
+	for item: Dictionary in state.get("forecast", []):
+		if item.kind == kind and _is_planned(item):
+			return true
+	return false
+
+
+## Every tick: forecast items whose day has come, and the planned heater thermostat.
+func _tick_forecast() -> void:
+	for item: Dictionary in state.forecast:
+		if item.done or float(item.day) > state.day:
+			continue
+		var planned := _is_planned(item)
+		match item.kind:
+			"comet":
+				if state.cme.phase != "" or state.dust.phase != "" or _arriving():
+					if _arriving():
+						item.done = true
+						item.result = "passed"
+					continue   # a storm or another field first: it waits
+				if planned and not state.fuel_frozen and "navigator" not in state.offline:
+					item.result = "planned"
+					state.fuel = maxf(state.fuel - PLAN_BURN_FUEL, 0.0)
+					state.stats.plan_made = int(state.stats.plan_made) + 1
+					_shove(Vector2.DOWN, SHOVE_COURSE)
+					_say("STORED BURN: steered clear of the %s trail (-%d%% fuel)" % [item.name, int(PLAN_BURN_FUEL)])
+				else:
+					if not _intro_ok("debris"):
+						continue
+					item.result = "failed" if planned else "missed"
+					if planned:
+						state.stats.plan_failed = int(state.stats.plan_failed) + 1
+						_say("PLANNED BURN FAILED - %s" % ("FUEL FROZEN" if state.fuel_frozen else "BRIDGE OFFLINE"))
+					else:
+						state.stats.plan_missed = int(state.stats.plan_missed) + 1
+					_start_dust(str(item.name))
+			"asteroid":
+				if state.cme.phase != "" or state.dust.phase in ["stream", "flying"]:
+					continue
+				if planned:
+					item.result = "planned"
+					state.stats.plan_made = int(state.stats.plan_made) + 1
+					var t := FLYBY_TIME * _pace
+					var e := {id = _next_id, kind = "flyby", role = "scientist", title = "Flyby: " + str(item.name),
+							time_left = t, duration = t, work_time = FLYBY_WORK, repair = false}
+					_next_id += 1
+					state.events.append(e)
+					Events.event_started.emit(e)
+					_say("ASTEROID %s IN VIEW - SCIENTIST: OBSERVE IT (2x science)!" % str(item.name).to_upper())
+				else:
+					item.result = "missed"
+					state.stats.plan_missed = int(state.stats.plan_missed) + 1
+					_say("Asteroid %s flew past - nobody was looking (plan it at the holo-table)" % item.name)
+			"cold":
+				item.result = "planned" if planned else "missed"
+				if planned:
+					state.stats.plan_made = int(state.stats.plan_made) + 1
+					_say("COLD ZONE - stored command: heater THERMOSTAT on")
+			"conjunction":
+				item.result = "planned" if planned else "missed"
+				if planned:
+					state.stats.plan_made = int(state.stats.plan_made) + 1
+					_say("EXTRA DSN TIME BOOKED - Comms: empty the recorder before the conjunction!")
+		item.done = true
+		_emit()
+	# Planned cold zone: a thermostat keeps the tanks between COLD_C and WARM_C (it still draws heater power).
+	if _planned_kind("cold") and state.forecast.any(func(i: Dictionary) -> bool: return i.kind == "cold" and i.done) \
+			and state.blackout <= 0.0 and not state.cme.get("safe", false):
+		if not state.loads.heater and state.tank_temp < COLD_C + 2.0:
+			state.loads.heater = true
+		elif state.loads.heater and state.tank_temp > WARM_C:
+			state.loads.heater = false
+
+
+## {type = "plan", id}: the holo-table toggles a plan for one forecast item.
+func _toggle_plan(id: int) -> void:
+	for item: Dictionary in state.forecast:
+		if int(item.id) != id:
+			continue
+		var key := str(id)
+		var label: String = Forecast.KIND_INFO[item.kind].label
+		if state.plan.has(key):
+			state.plan.erase(key)
+			_say("PLAN: %s %s cancelled" % [label, item.name])
+		elif item.done or float(item.day) < state.day + PLAN_LEAD:
+			_say("TOO LATE to plan %s - commands need time to reach the ship" % item.name)
+		else:
+			state.plan[key] = _actor
+			_credit("plans")
+			_say("PLANNED: %s - %s (day %d)" % [label, item.name, int(item.day)])
+		return
+
+
 # --- frozen propellant -------------------------------------------------------------------------
 
 ## Sunlight at the ship (1 at Earth -> ~0.43 at Mars), the same transfer-ellipse model as ShipLighting.
@@ -1174,7 +1489,7 @@ func _expire(event: Dictionary) -> void:
 	if event.kind == "power_up":
 		_say("Systems still OFF - Engineer: switch instruments + transmitter on by hand")
 		return
-	if EVENT_TYPES[event.kind].fault:
+	if EVENT_TYPES.get(event.kind, {}).get("fault", false):
 		if event.role not in state.offline:
 			state.offline.append(event.role)
 			state.stats.knockouts = int(state.stats.knockouts) + 1
@@ -1200,6 +1515,7 @@ func _remove_event(event: Dictionary) -> void:
 func _on_action(role: String, action: Dictionary) -> void:
 	if state.is_empty():
 		return
+	_actor = str(action.get("by", local_key))
 	match action.get("type", ""):
 		"resolve":
 			_resolve(int(action.get("id", -1)))
@@ -1210,6 +1526,7 @@ func _on_action(role: String, action: Dictionary) -> void:
 				_say("NAV: burn already spooling - BRACE!")
 			else:
 				var dir := str(action.get("dir", ""))
+				_credit("burns")
 				state.brace = {time_left = BRACE_TIME, duration = BRACE_TIME, dir = dir}
 				_say("NAV: %s BURN IN %.1f s - EVERYONE BRACE!" % [dir.to_upper(), BRACE_TIME])
 		"ping":   # a crew call-out: one marker per player, newest replaces their old one
@@ -1219,10 +1536,18 @@ func _on_action(role: String, action: Dictionary) -> void:
 					text = str(action.get("text", "HELP!")).left(24), role = str(action.get("role", "")),
 					time_left = PING_TIME})
 			_next_id += 1
+			_credit("pings")
 			while state.pings.size() > MAX_PINGS:
 				state.pings.pop_front()
+		"plan":   # the Mission Hub holo-table (PlanBoard): plan / unplan one forecast item
+			_toggle_plan(int(action.get("id", -1)))
+		"eva_fix":   # a spacewalker held USE on an outside fault (EvaView)
+			_eva_fix(int(action.get("id", -1)))
 		"douse":   # a crew member with an extinguisher put out one flame
+			var flames: int = state.fires.size()
 			_douse(int(action.get("id", -1)))
+			if state.fires.size() < flames:
+				_credit("fires")
 		"drop_tool":
 			state.toolboxes.append({id = _next_id, x = float(action.get("x", 0)), y = float(action.get("y", 0)),
 					kind = str(action.get("kind", "toolbox"))})
@@ -1235,6 +1560,7 @@ func _on_action(role: String, action: Dictionary) -> void:
 			for b: Dictionary in state.breaches.duplicate():
 				if int(b.id) == int(action.get("id", -1)):
 					state.breaches.erase(b)
+					_credit("patches")
 					state.hull = minf(state.hull + PATCH_HULL, 100.0)
 					_say("Hull breach sealed" + (" - %d more!" % state.breaches.size() if not state.breaches.is_empty() else ""))
 		"radio":
@@ -1249,6 +1575,7 @@ func _on_action(role: String, action: Dictionary) -> void:
 				_say("Navigator is flying through the debris!")
 		"dodge_result":
 			if state.dust.phase == "flying":
+				_credit("dodges")
 				_end_dust(int(action.get("hits", 0)), float(action.get("thrust", 0.0)), float(action.get("turning", 0.0)))
 				return
 		"toggle_load":
@@ -1265,6 +1592,7 @@ func _on_action(role: String, action: Dictionary) -> void:
 			var load: String = action.get("load", "")
 			if state.loads.has(load):
 				state.loads[load] = not state.loads[load]
+				_credit("switches")
 				_say("PWR: %s %s" % [load, "ON" if state.loads[load] else "OFF"])
 				# Switched both back on by hand: the power-up ticket is done too.
 				if state.loads.instruments and state.loads.transmitter:
@@ -1273,6 +1601,8 @@ func _on_action(role: String, action: Dictionary) -> void:
 							_remove_event(e)
 		"downlink":
 			_downlinking = bool(action.get("on", false))
+			if _downlinking:
+				_downlinker = _actor
 			if _downlinking and _refuse_if_burning("comms"):
 				_downlinking = false
 				return
@@ -1296,7 +1626,7 @@ func _resolve(id: int) -> void:
 	for event: Dictionary in state.events:
 		if event.id != id:
 			continue
-		if event.kind == "fire":
+		if event.kind in ["fire", "eva"]:
 			return  # not workable: each flame is put out with an extinguisher
 		if _refuse_if_burning(str(event.role)):
 			return  # ticket stays: put the fire out first
@@ -1313,6 +1643,8 @@ func _resolve(id: int) -> void:
 				return   # ticket stays: try again once there is power
 			var need := Orbits.moi_fuel(state.design)   # mission base x chosen orbit x tank
 			state.stats.fuel_at_moi = state.fuel
+			_credit("tickets")
+			_credit("moi")
 			_grade(event)
 			_remove_event(event)
 			_shove(Vector2.RIGHT, SHOVE_BRAKE)   # braking: everyone keeps flying forward
@@ -1350,14 +1682,17 @@ func _resolve(id: int) -> void:
 				state.loads[load] = false
 			_downlinking = false
 			_say("SAFE MODE: ship powered down for the storm")
-		elif event.kind == "science_window":
+		elif event.kind in ["science_window", "flyby"]:
 			if not state.loads.instruments:
 				_say("SCI: instruments are OFF - ask Engineer")
 				return  # ticket stays, try again
 			# Goes into the recorder; only what Comms sends home scores. A full recorder loses it.
+			var amount: float = params.science * (FLYBY_SCIENCE if event.kind == "flyby" else 1.0)
+			if event.kind == "flyby":
+				state.stats.flybys = int(state.stats.flybys) + 1
 			var room: float = maxf(params.storage - _data_units, 0.0)
-			var gained := minf(params.science, room)
-			var lost: float = params.science - gained
+			var gained := minf(amount, room)
+			var lost: float = amount - gained
 			_data_units += gained
 			state.science_lost += lost
 			state.science_stored = _data_units
@@ -1371,6 +1706,13 @@ func _resolve(id: int) -> void:
 				_say("+%d SCIENCE stored - send it home from the COMMS ROOM (top left) in a DSN pass" % int(gained))
 		else:
 			_say("Fixed: " + event.title)
+		_credit("tickets")
+		if event.repair:
+			_credit("repairs")
+		elif event.kind in ["science_window", "flyby"]:
+			_credit("science")
+		elif event.kind in ["shields", "safe_mode"]:
+			_credit("storms")
 		_grade(event)
 		_remove_event(event)
 		return

@@ -192,6 +192,9 @@ func _draw_row(ci: CanvasItem, rr: Rect2, row: Dictionary) -> void:
 	elif row.kind == "fire":
 		icon_name = "fire"
 		icon_col = Color.WHITE   # the fire icon keeps its own colours
+	elif row.kind == "eva":
+		icon_name = "eva"
+		icon_col = Color.WHITE   # spacesuit helmet, own colours
 	if row.status == "done":
 		icon_name = "check"
 		icon_col = UiKit.GOOD

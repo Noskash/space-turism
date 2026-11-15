@@ -15,6 +15,7 @@ var _state := {}
 var _shown := false
 var _t := 0.0
 var _page := 0
+var _page_t := 0.0            # seconds on the current page (the crew credits animate in)
 var _canvas: Node2D
 var _why: Array[String] = []
 var _new_best := false
@@ -55,6 +56,7 @@ func _process(delta: float) -> void:
 		return
 	var before := _t
 	_t += delta
+	_page_t += delta
 	if before < DELAY and _t >= DELAY:
 		visible = true
 		Tutorial.hold(true)
@@ -78,6 +80,7 @@ func _input(event: InputEvent) -> void:
 		KEY_SPACE, KEY_ENTER:
 			if not last:
 				_page += 1
+				_page_t = 0.0
 				Sfx.play("page")
 			elif _decides():
 				if Network.is_in_room():
@@ -89,6 +92,11 @@ func _input(event: InputEvent) -> void:
 				_go("other")   # leaves the room (co-op: the host closes it for everyone)
 		KEY_ESCAPE:
 			_go("menu")
+
+
+## Showing and reading keys (TouchControls puts NEXT / MISSIONS / MENU buttons on phones).
+func takes_input() -> bool:
+	return visible and _t >= DELAY + 0.6
 
 
 func _decides() -> bool:
@@ -135,6 +143,7 @@ func _page_list() -> Array[String]:
 	if _has_crew():
 		out.append("crew")
 	out.append("nasa")
+	out.append("team")   # end credits: who did what + ranking, last before flying again
 	return out
 
 
@@ -200,6 +209,20 @@ func _reasons() -> Array[String]:
 	if int(st.get("freezes", 0)) > 0:
 		out.append("The fuel froze %d time(s) far from the Sun (%d s with no burns): hydrazine freezes near 2 C - heater, RTG or thermal control keep it liquid." % [
 				int(st.freezes), int(st.get("frozen_time", 0))])
+	if int(st.get("eva_faults", 0)) > 0 and float(st.get("eva_open", 0.0)) > 20.0:
+		out.append("Outside faults stayed broken for %d s in total (%d of %d fixed on spacewalks): a jammed solar wing halves the power, a jammed dish slows the downlink, a leaking radiator overheats the bus." % [
+				int(st.eva_open), int(st.get("eva_fixes", 0)), int(st.eva_faults)])
+	# PLAN vs ACTUAL (holo-table flight plan).
+	var made := int(st.get("plan_made", 0))
+	var missed := int(st.get("plan_missed", 0))
+	if made + missed > 0:
+		var flybys := int(st.get("flybys", 0))
+		out.append("FLIGHT PLAN: %d of %d forecast events were planned ahead%s%s. Real probes run on stored commands uploaded weeks before." % [
+				made, made + missed + int(st.get("plan_failed", 0)),
+				(", %d asteroid flyby(s) observed" % flybys) if flybys > 0 else "",
+				(" - %d plan(s) failed (frozen fuel / Bridge offline)" % int(st.plan_failed)) if int(st.get("plan_failed", 0)) > 0 else ""])
+	if int(st.get("eva_storm", 0)) > 0:
+		out.append("%d astronaut(s) were on a spacewalk when a radiation wave hit - outside there is no hull and no shelter." % int(st.eva_storm))
 	if int(st.get("fire_overload", 0)) > 0:
 		out.append("The power bus overheated %d time(s): the loads drew more than the panels made, and the wiring caught fire." % int(st.fire_overload))
 	if int(st.get("fire_knockouts", 0)) > 0:
@@ -227,6 +250,7 @@ func _draw_report() -> void:
 		"result": _draw_result(box, accent, k)
 		"orbit": _draw_orbit(box, accent, k)
 		"crew": _draw_crew(box, accent, k)
+		"team": CrewCredits.draw(_canvas, box, _state, _page_t, Color(accent, k))
 		_: _draw_nasa(box, accent, k)
 	var last := _page >= _pages() - 1
 	var keys := "SPACE: NEXT"

@@ -1,0 +1,24 @@
+{
+  "_note": "Looks for the hangar suit-up locker (CharacterSelect). A look = a crew skin (sprites/crew_skins, '' = the classic role-coloured flight suit) + a backdrop drawn in code. WHO you are (name, bio) comes from data/astronauts.json via your crew role; the look is cosmetic. Backdrop captions are real facts - keep them sourced.",
+  "order": ["", "friend_1", "friend_2"],
+  "looks": {
+    "": {
+      "title": "Flight suit",
+      "tagline": "Standard issue: a flight suit in your role's colour, helmet on, visor down. Ready for anything.",
+      "backdrop": "earth",
+      "caption": "EARTH FROM ORBIT - ~400 KM UP, WHERE THE ISS FLIES"
+    },
+    "friend_1": {
+      "title": "The suit",
+      "tagline": "Dressed for the launch press conference. Never flies without his companion.",
+      "backdrop": "pad",
+      "caption": "SLC-41, CAPE CANAVERAL - MRO (2005) AND MAVEN (2013) LAUNCHED HERE"
+    },
+    "friend_2": {
+      "title": "The field jacket",
+      "tagline": "Field jacket, sturdy boots and a phone full of rover photos. Came for the rocks.",
+      "backdrop": "mars",
+      "caption": "GALE CRATER, MARS - SUNSETS LOOK BLUE THERE (CURIOSITY, 2015)"
+    }
+  }
+}

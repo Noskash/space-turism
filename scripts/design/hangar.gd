@@ -10,6 +10,7 @@ extends Node2D
 ##   - SPACE at a class plate switches ship class AND rocket (DesignRules.CLASS_ROCKET); parts in
 ##     cells the new body lacks go back on the shelf. Nothing is filled in for you.
 ##   - The planner console (NAV) opens the launch window planner as an overlay: date, path, orbit.
+##   - SPACE at the suit-up locker (left, by the crew spawn) opens CharacterSelect: pick your look.
 ##   - SPACE in the launch door zone = READY. All READY (ship has no errors, plan possible) -> launch pad.
 ##   Any change to the ship or the plan un-readies everyone.
 ##
@@ -53,6 +54,8 @@ var _planner: Node2D          # open planner overlay (null = closed)
 var _planner_layer: CanvasLayer
 var _board: RocketBoard       # open rocket board overlay (null = closed)
 var _board_layer: CanvasLayer
+var _wardrobe: CharacterSelect   # open suit-up locker overlay (null = closed)
+var _wardrobe_layer: CanvasLayer
 var _rocket_shape: CollisionShape2D   # the rocket on the bay blocks the crew (size follows the class)
 var _card_target := {}        # what the F card shows ({} = closed)
 var _target := {}             # what SPACE / F act on right now
@@ -116,6 +119,8 @@ func _attach_tutorial() -> void:
 	Tutorial.attach(self, "hangar", [
 		{title = "The assembly hangar", rect = Rect2(4, 18, 472, 246),
 		 body = "Together you build ONE spacecraft. Walk with WASD (hold SHIFT to run). Every part costs mass, power AND budget - there is no free upgrade."},
+		{title = "Suit up", rect = Rect2(62, 156, 42, 46),
+		 body = "The locker by the door you came in: SPACE picks your look (flight suit and backdrop). Your astronaut - name, bio, radiation dose - comes with your crew role."},
 		{title = "Your shelf", rect = Rect2(8, 2, 146, 54),
 		 body = "Each crew role has a shelf. SPACE picks up a part from YOUR shelf, F reads what it does and what it costs."},
 		{title = "The rocket", rect = Rect2(178, 34, 124, 130),
@@ -246,6 +251,9 @@ func _spawn_crew() -> void:
 		if Network.is_in_room():
 			member.display_name = str(Network.players.get(id, ""))
 		member.skin = PLAYER_SKINS[i % 2]
+		var saved: Variant = CharacterSelect.saved_skin()
+		if id == _me and saved != null and (saved == "" or CrewSprite.has_skin(saved)):
+			member.skin = saved   # the look picked at the suit-up locker last time (others arrive by snapshot)
 		member.position = _v(spawns[i % spawns.size()]) if not spawns.is_empty() else Vector2(30, 136)
 		member.set_meta("peer", id)
 		_crew.add_child(member)
@@ -283,9 +291,6 @@ func _process(delta: float) -> void:
 
 
 func _handle_input() -> void:
-	if Input.is_action_just_pressed(Controls.action("p1", "skin")):
-		var i := PLAYER_SKINS.find(_local.skin)
-		_local.skin = PLAYER_SKINS[(i + 1) % PLAYER_SKINS.size()]
 	if Input.is_action_just_pressed(Controls.action("p1", "inspect")):
 		if not _card_target.is_empty() or _target.is_empty() or _target.kind == "hint":
 			_card_target = {}
@@ -324,6 +329,10 @@ func _find_target(feet: Vector2) -> Dictionary:
 	var cp := _console_use_point()
 	if feet.distance_to(cp) <= CONSOLE_REACH and feet.distance_to(cp) < best_d:
 		best = {kind = "console"}
+	var ld := feet.distance_to(HangarDecor.LOCKER_USE)
+	if ld <= HangarDecor.LOCKER_REACH and ld < best_d:
+		best_d = ld
+		best = {kind = "locker"}
 	var rd := feet.distance_to(HangarDecor.RADIO_USE)
 	if rd <= HangarDecor.RADIO_REACH and rd < best_d:
 		best = {kind = "radio"}
@@ -383,6 +392,8 @@ func _use(t: Dictionary) -> void:
 		"radio":
 			_send({type = "radio"})
 			Sfx.play("toggle")
+		"locker":
+			_open_wardrobe()
 
 
 ## Why the ship can't launch yet ("" = it can).
@@ -448,7 +459,34 @@ func _close_planner() -> void:
 
 
 func _overlay_open() -> bool:
-	return _planner != null or _board != null
+	return _planner != null or _board != null or _wardrobe != null
+
+
+## Suit-up locker: character select overlay (walking is held off by CharacterSelect itself).
+func _open_wardrobe() -> void:
+	if _wardrobe:
+		return
+	_wardrobe_layer = CanvasLayer.new()
+	_wardrobe_layer.layer = 15
+	add_child(_wardrobe_layer)
+	_wardrobe = CharacterSelect.new()
+	_wardrobe.role = str(roles.get(_me, "all"))
+	_wardrobe.worn = _local.skin
+	_wardrobe.crew_root = _crew
+	_wardrobe.picked.connect(func(skin: String) -> void: _local.skin = skin)   # synced in the crew snapshot
+	_wardrobe.close_requested.connect(_close_wardrobe)
+	_wardrobe_layer.add_child(_wardrobe)
+	_card_target = {}
+	_local.velocity = Vector2.ZERO
+	_local._facing = Vector2.UP
+	_local._animate(false, "")
+
+
+func _close_wardrobe() -> void:
+	if _wardrobe_layer:
+		_wardrobe_layer.queue_free()
+	_wardrobe = null
+	_wardrobe_layer = null
 
 
 ## The rocket board: full-screen overlay; the player stands at the rocket meanwhile.
@@ -694,6 +732,7 @@ func _launch(final_design: Dictionary) -> void:
 	_launching = true
 	_close_planner()
 	_close_board()
+	_close_wardrobe()
 	DesignRules.chosen = final_design.duplicate(true)
 	Sfx.play("burn")
 	_say("ALL READY - TO THE LAUNCH PAD")
@@ -893,6 +932,7 @@ func _draw_prompt() -> void:
 			ok = design.ship_class != t.id
 			verb = ("SWITCH TO " + str(DesignRules.class_info(t.id).get("name", "")).to_upper()) if ok else "SELECTED"
 		"console": verb = "PLAN LAUNCH"
+		"locker": verb = "CHOOSE CHARACTER"
 		"radio":
 			var song := _radio_audio.now_playing() if _radio_audio else ""
 			verb = ("RADIO OFF  ~ %s ~" % song.to_upper()) if song != "" else "RADIO ON"

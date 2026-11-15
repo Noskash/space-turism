@@ -12,6 +12,8 @@ extends Resource
 @export var accent_color: Color = Color(0.35, 0.85, 1.0)
 ## Mars campaign: the card opens the mission picker (MissionSelect) instead of creating a room.
 @export var has_missions: bool = false
+## False = the card shows "UNDER DEVELOPMENT - NOT AVAILABLE YET" and can't be picked.
+@export var available: bool = true
 ## Mission id from data/missions.json, set by the mission picker ("" = none). Synced with the room.
 @export var mission: String = ""
 ## Sandbox hazard switches {storms, debris, hull, conjunction} (Missions.sim). Synced with the room.
@@ -40,6 +42,7 @@ func to_dict() -> Dictionary:
 		"gas_giant": gas_giant,
 		"rings": rings,
 		"has_missions": has_missions,
+		"available": available,
 		"mission": mission,
 		"options": options,
 	}
@@ -57,6 +60,7 @@ static func from_dict(data: Dictionary) -> LevelData:
 	level.gas_giant = bool(data.get("gas_giant", false))
 	level.rings = bool(data.get("rings", false))
 	level.has_missions = bool(data.get("has_missions", false))
+	level.available = bool(data.get("available", true))
 	level.mission = str(data.get("mission", ""))
 	var opts: Variant = data.get("options", {})
 	level.options = opts if opts is Dictionary else {}

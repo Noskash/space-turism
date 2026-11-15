@@ -13,6 +13,9 @@ const HIGHLIGHT_SCALE := Vector2(1.04, 1.04)
 @onready var _description: Label = %Description
 
 var _highlight_tween: Tween
+var _locked := false
+var _sign: Control        # "UNDER DEVELOPMENT" plate over a level that isn't playable yet
+var _t := 0.0
 
 
 func _ready() -> void:
@@ -53,6 +56,68 @@ func setup(data: LevelData, number: int) -> void:
 	_planet.material = planet_material
 
 	_apply_accent(data.accent_color)
+	if not data.available:
+		_lock()
+
+
+## Not playable yet: dimmed card + a hazard-taped "UNDER DEVELOPMENT / NOT AVAILABLE YET" sign.
+func is_locked() -> bool:
+	return _locked
+
+
+func _lock() -> void:
+	_locked = true
+	for n: Control in [_planet, _number, _title, _description, _accent_line]:
+		n.modulate = Color(0.55, 0.55, 0.62, 0.8)
+	_sign = Control.new()
+	_sign.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sign.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_sign.draw.connect(_draw_sign)
+	add_child(_sign)
+
+
+func _process(delta: float) -> void:
+	if _sign:
+		_t += delta
+		_sign.queue_redraw()
+
+
+func _draw_sign() -> void:
+	var r := _sign.get_rect()
+	var font := get_theme_default_font()
+	var w := r.size.x - 16.0
+	var h := 62.0
+	var box := Rect2(8.0, roundf(r.size.y * 0.42 - h / 2.0), w, h)
+	var blink := fmod(_t, 1.2) < 0.9
+	_sign.draw_rect(box.grow(3), Color(0.02, 0.02, 0.05, 0.92))
+	# Hazard tape top and bottom (pixel steps, no smoothing).
+	for edge: float in [box.position.y - 3.0, box.end.y - 3.0]:
+		var x := box.position.x - 3.0
+		var i := int(_t * 8.0) % 2
+		while x < box.end.x + 3.0:
+			var sw := minf(8.0, box.end.x + 3.0 - x)
+			_sign.draw_rect(Rect2(x, edge, sw, 6), Color("ffc640") if i % 2 == 0 else Color("1a1a22"))
+			x += 8.0
+			i += 1
+	var top := "UNDER DEVELOPMENT"
+	var bottom := "NOT AVAILABLE YET"
+	var size_a := 24
+	var size_b := 16
+	while size_a > 8 and font.get_string_size(top, HORIZONTAL_ALIGNMENT_LEFT, -1, size_a).x > w - 8.0:
+		size_a -= 1
+	var ya := box.position.y + 28.0
+	var yb := box.position.y + 50.0
+	var col := Color("ffc640") if blink else Color("b88a2a")
+	_sign.draw_string_outline(font, Vector2(box.position.x, ya), top, HORIZONTAL_ALIGNMENT_CENTER, w, size_a, 4, Color.BLACK)
+	_sign.draw_string(font, Vector2(box.position.x, ya), top, HORIZONTAL_ALIGNMENT_CENTER, w, size_a, col)
+	_sign.draw_string(font, Vector2(box.position.x, yb), bottom, HORIZONTAL_ALIGNMENT_CENTER, w, size_b, Color(0.85, 0.87, 0.95))
+
+
+## Pressed while locked: a short "no" shake.
+func shake() -> void:
+	var tw := create_tween()
+	for k: float in [6.0, -5.0, 3.0, 0.0]:
+		tw.tween_property(self, "rotation", deg_to_rad(k * 0.4), 0.05)
 
 
 ## Карточка только для показа (в комнате): без нажатий, сразу подсвечена.

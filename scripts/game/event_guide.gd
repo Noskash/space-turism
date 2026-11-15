@@ -30,8 +30,9 @@ const WHO := {
 ## repairs, blackout, breaches...) gives way to a NEW event the crew hasn't seen yet, so a first
 ## encounter is never missed because an older checklist was still on screen.
 const CRITICAL := ["moi", "storm_shields", "storm_safe", "debris", "conjunction"]
-const ORDER := ["moi", "storm_shields", "storm_safe", "debris", "conjunction", "breach", "blackout", "solar_storm",
-		"thruster_leak", "antenna_glitch", "science_window", "repair", "low_power", "data_full"]
+const ORDER := ["moi", "storm_shields", "storm_safe", "debris", "conjunction", "breach", "fire", "blackout", "freeze",
+		"fuel_leak", "eva", "power_up", "solar_storm", "thruster_leak", "antenna_glitch", "science_window", "flyby",
+		"repair", "low_power", "data_full", "plan"]
 ## Codex terms each event unlocks the first time it happens (even with tutorials skipped).
 const TERMS := {
 	"storm_shields": ["solar_particle_event", "radiation_shielding"],
@@ -39,6 +40,7 @@ const TERMS := {
 	"debris": ["comet_debris"], "breach": ["hull_breach"], "blackout": ["rtg"],
 	"solar_storm": ["rad_hard"], "science_window": ["downlink"], "data_full": ["downlink", "dsn"],
 	"conjunction": ["solar_conjunction"], "moi": ["mars_orbit_insertion"], "low_power": ["au"],
+	"eva": ["eva"], "flyby": ["near_earth_asteroid"], "plan": ["flight_plan"],
 }
 const FAULTS := {
 	"solar_storm": "engineer", "thruster_leak": "navigator", "antenna_glitch": "comms",
@@ -89,7 +91,7 @@ func _on_state(state: Dictionary) -> void:
 ## Who may cut whom: timed space weather (3) > hull breach (2, the crew can die) > the rest (1).
 ## Rank-1 walkthroughs also give way to each other, so a long repair never hides a new fault.
 func _rank(id: String) -> int:
-	return 3 if id in CRITICAL else (2 if id == "breach" else 1)
+	return 3 if id in CRITICAL else (2 if id in ["breach", "fire"] else 1)
 
 
 # --- triggers ------------------------------------------------------------------------------
@@ -117,6 +119,10 @@ func _triggered(id: String) -> bool:
 			return _state.get("conjunction", {}).get("phase", "") == "warning"
 		"moi":
 			return _state.get("moi", {}).get("phase", "") == "window"
+		"fire":
+			return not _state.get("fires", []).is_empty()
+		"plan":   # something on the forecast worth planning, while things are calm
+			return _plan_due() and _state.get("cme", {}).get("phase", "") == "" and _state.get("dust", {}).get("phase", "") == ""
 		_:
 			return not _ticket(id).is_empty()
 
@@ -477,6 +483,135 @@ func _build(id: String) -> Dictionary:
 				{title = "Re-point it", rect = ROOMS.comms,
 				 body = "COMMS: dock at the Comms console and HOLD SPACE until the ring fills."},
 			], "ANTENNA LOCKED", "MISSED - Comms OFFLINE, repair it")
+		"fire":
+			var f0: Dictionary = s.get("fires", [{}])[0]
+			var flame := Vector2(float(f0.get("x", 240)), float(f0.get("y", 135)))
+			return {
+				title = "FIRE ON BOARD",
+				panes = [
+					{title = "Fire!", rect = UiKit.world_rect(Rect2(flame - Vector2(18, 18), Vector2(36, 32))),
+					 body = "Something is burning in the %s. Fire grows: more flames every few seconds, then it jumps through the doors to the next room. A burning room's station is TOO HOT to use, and smoke eats OXYGEN." % _room_name(str(f0.get("room", "")))},
+					{title = "Grab an extinguisher", rect = UiKit.world_rect(Rect2(ShipFire.RACKS[0] - Vector2(16, 18), Vector2(32, 30))),
+					 body = "Red extinguishers hang on racks in the MISSION HUB and on the BRIDGE. SPACE takes one. Your hands hold ONE thing: a toolbox OR an extinguisher."},
+					{title = "Put it out",
+					 body = "Walk up to a flame and HOLD SPACE for a second - one flame at a time. Call for help with G! Real basis: in 1997 a fire broke out on the Mir space station; crews have trained with extinguishers ever since."},
+					{title = "Why it started",
+					 body = "The power bus overheats when the loads draw more than the solar panels make (watch the toast), and debris hits can spark one. Switching loads off in time prevents it (SIMPLIFIED)."},
+				],
+				steps = [
+					_step("Grab an extinguisher (Mission Hub or Bridge rack)", "",
+						func() -> bool: return (local != null and local.has_extinguisher) or _state.get("fires", []).is_empty(),
+						_nearest_rack),
+					_step("Go to the flames", "", func() -> bool: return _near_fire() or _state.get("fires", []).is_empty(), _first_fire),
+					_step(func() -> String: return "HOLD SPACE at each flame (%d left)" % _state.get("fires", []).size(), "",
+						func() -> bool: return _state.get("fires", []).is_empty(), _first_fire),
+				],
+				over = func() -> bool: return _state.get("fires", []).is_empty() or _state.get("lost", "") != "",
+				outcome = func() -> Array:
+					return ["FIRE OUT", true] if _state.get("fires", []).is_empty() else ["The ship burned", false],
+				timeout = 120.0,
+			}
+		"freeze":
+			return {
+				title = "FUEL FREEZING",
+				panes = [
+					{title = "The fuel is freezing", rect = UiKit.hud_rect("resources").grow(1),
+					 body = "Far from the Sun the ship cools down. The propellant (hydrazine) freezes at about 2 C - then no burn works, not even the Mars brake. Real probes keep tank and line heaters on all the way to Mars."},
+					{title = "Heater ON", rect = UiKit.world_rect(ROOMS.engineer),
+					 body = "ENGINEER: dock at the Engine Room and HOLD SPACE on the ticket - the heater switches on. When the toast says the tanks are warm, switch it OFF again: the heater draws power and can overheat the bus."},
+					{title = "Plan it",
+					 body = "The FLIGHT PLAN on the Mission Hub table shows the COLD ZONE: plan it and a thermostat runs the heater for you. An RTG or a radiator in design also keep the tanks warm."},
+				],
+				steps = [
+					_step(_go_text.bind("engineer"), "engineer", func() -> bool: return _docked("engineer") or _ticket("freeze").is_empty()),
+					_step(func() -> String: return "HOLD SPACE: heater ON (tanks %d C)" % roundi(float(_state.get("tank_temp", 0))),
+						"engineer", func() -> bool: return _ticket("freeze").is_empty()),
+				],
+				over = func() -> bool: return _ticket("freeze").is_empty(),
+				outcome = func() -> Array:
+					return ["FUEL FROZEN - heater on, wait for it to thaw", false] if _state.get("fuel_frozen", false) \
+						else ["TANKS WARMING - heater OFF again once warm", true],
+				timeout = 60.0,
+			}
+		"fuel_leak":
+			var fuel0 := float(s.get("fuel", 0))
+			return {
+				title = "PROPELLANT LEAK",
+				panes = [
+					{title = "Fuel leak!", rect = UiKit.hud_rect("resources").grow(1),
+					 body = "A hit cracked a propellant line. Fuel drains every second until it is sealed - and without enough fuel, the brake at Mars becomes a flyby."},
+					{title = "Seal it", rect = UiKit.world_rect(ROOMS.navigator),
+					 body = "NAVIGATOR: dock at the Bridge and HOLD SPACE until the ring fills. No timer - but every second costs fuel."},
+				],
+				steps = [
+					_step(_go_text.bind("navigator"), "navigator", func() -> bool: return _docked("navigator") or _ticket("fuel_leak").is_empty()),
+					_step("HOLD SPACE: seal the line", "navigator", func() -> bool: return _ticket("fuel_leak").is_empty()),
+				],
+				over = func() -> bool: return _ticket("fuel_leak").is_empty(),
+				outcome = func() -> Array:
+					return ["LEAK SEALED - it cost %d%% fuel" % maxi(roundi(fuel0 - float(_state.get("fuel", 0))), 0), true],
+				timeout = 90.0,
+			}
+		"eva":
+			var job := _ticket("eva")
+			var job_id := int(job.get("id", -1))
+			return {
+				title = "SPACEWALK",
+				panes = [
+					{title = "Broken outside", rect = UiKit.hud_rect("tasks").grow(1),
+					 body = "%s. It is on the OUTSIDE of the ship: no console fixes it. Someone has to go out in a suit." % str(job.get("title", "An outside fault")).trim_prefix("EVA: ").capitalize()},
+					{title = "The airlock", rect = UiKit.world_rect(Rect2(ShipEva.HATCH - Vector2(14, 14), Vector2(28, 28))),
+					 body = "The round hatch in the BRIDGE floor. Walk onto it with EMPTY hands and press SPACE to suit up. Anyone can go."},
+					{title = "Outside",
+					 body = "WASD walks on magnetic boots along the hull. HOLD SPACE at the blinking job to fix it, then back to the hatch and SPACE. Watch the suit's O2 bar - when it runs out the tether reels you in. No sound out there, and no shelter from a radiation storm!"},
+				],
+				steps = [
+					_step("Anyone: go to the AIRLOCK hatch on the Bridge (hands empty)", "",
+						func() -> bool: return _near_hatch() or (local != null and local.eva) or _ticket_by_id(job_id).is_empty(),
+						func() -> Vector2: return ShipEva.HATCH),
+					_step("SPACE on the hatch: suit up and go out", "",
+						func() -> bool: return (local != null and local.eva) or _ticket_by_id(job_id).is_empty(),
+						func() -> Vector2: return ShipEva.HATCH),
+					_step("Walk to the job, HOLD SPACE until fixed", "", func() -> bool: return _ticket_by_id(job_id).is_empty()),
+				],
+				over = func() -> bool: return _ticket_by_id(job_id).is_empty(),
+				outcome = func() -> Array: return ["FIXED ON A SPACEWALK - now get back inside", true],
+				timeout = 150.0,
+			}
+		"power_up":
+			return _fault_guide("power_up", "engineer", "POWER UP", [
+				{title = "Systems are off", rect = UiKit.hud_rect("tasks").grow(1),
+				 body = "After safe mode or a blackout the instruments and the transmitter stay OFF: no science, nothing sent home. Real teams send one recovery sequence to wake the probe."},
+				{title = "Power up", rect = UiKit.world_rect(ROOMS.engineer),
+				 body = "ENGINEER: dock at the Engine Room and HOLD SPACE once - both come back on. Missed it? Nothing breaks, but you must switch each load on by hand."},
+			], "SYSTEMS BACK ON", "Systems still OFF - switch them on by hand")
+		"flyby":
+			return _fault_guide("flyby", "scientist", "ASTEROID FLYBY", [
+				{title = "Asteroid flyby", rect = UiKit.hud_rect("tasks").grow(1),
+				 body = "Your flight plan pointed the cameras at %s. Real probes plan flybys months ahead: Galileo photographed Gaspra and Ida on its way to Jupiter." % str(_ticket("flyby").get("title", "an asteroid")).trim_prefix("Flyby: ")},
+				{title = "Observe", rect = UiKit.world_rect(ROOMS.scientist),
+				 body = "SCIENTIST: dock at the Science Lab and HOLD SPACE (instruments ON). A flyby is worth 2x a normal observation - if the recorder has room."},
+			], "FLYBY OBSERVED - 2x science stored", "FLYBY MISSED - it is gone")
+		"plan":
+			return {
+				title = "FLIGHT PLAN",
+				panes = [
+					{title = "Plan ahead", rect = UiKit.world_rect(ROOMS.team),
+					 body = "The MISSION HUB table holds the FLIGHT PLAN: what is coming on the way to Mars - real comet trails and asteroids, the cold zone, the solar conjunction. It is calm now: the best time to plan."},
+					{title = "Stored commands",
+					 body = "Planned = handled when the ship gets there: a burn steers clear of a comet trail (a little fuel), the cameras catch an asteroid flyby (2x science), a thermostat runs the heater. Unplanned = it just happens to you. Probes really work like this: radio is too slow to steer them live."},
+				],
+				steps = [
+					_step(_go_text.bind("team"), "team", func() -> bool: return _at("team") or _plan_open() or _has_plan()),
+					_step("SPACE: open the flight plan", "team", func() -> bool: return _plan_open() or _has_plan()),
+					_step("A/D pick an event - SPACE to plan it", "", _has_plan),
+				],
+				over = _has_plan,
+				outcome = func() -> Array:
+					return ["PLAN UPLOADED - check the table again later", true] if _has_plan() \
+						else ["No plan yet - the table is always there", false],
+				timeout = 70.0,
+			}
 	return {}
 
 
@@ -486,7 +621,7 @@ func _fault_guide(kind: String, role: String, title: String, panes: Array, good:
 	var last := {left = 99.0}
 	var obs0 := int(_state.get("observations", 0))
 	var steps := [_step(_go_text.bind(role), role, func() -> bool: return _docked(role) or _ticket_by_id(id).is_empty())]
-	if kind == "science_window":
+	if kind in ["science_window", "flyby"]:
 		steps.push_front(_step("Instruments must be ON (Engineer)", "engineer",
 				func() -> bool: return _state.get("loads", {}).get("instruments", false) or _ticket_by_id(id).is_empty()))
 	steps.append(_step("HOLD SPACE until the ring fills", role, func() -> bool: return _ticket_by_id(id).is_empty()))
@@ -498,7 +633,8 @@ func _fault_guide(kind: String, role: String, title: String, panes: Array, good:
 				last.left = float(t.time_left)
 			return t.is_empty(),
 		outcome = func() -> Array:
-			var missed: bool = _offline(role) if kind in FAULTS else int(_state.get("observations", 0)) == obs0
+			var missed: bool = _offline(role) if kind in FAULTS else (not _loads_on() if kind == "power_up" \
+					else int(_state.get("observations", 0)) == obs0)
 			return [bad, false] if missed else [good, true],
 		timeout = 60.0,
 	}
@@ -506,6 +642,60 @@ func _fault_guide(kind: String, role: String, title: String, panes: Array, good:
 
 func _conj_phase() -> String:
 	return str(_state.get("conjunction", {}).get("phase", ""))
+
+
+func _room_name(room: String) -> String:
+	return {comms = "COMMS ROOM", science = "SCIENCE LAB", bridge = "BRIDGE", engineering = "ENGINE ROOM",
+			hub = "MISSION HUB", cargo = "CARGO BAY"}.get(room, "ship")
+
+
+func _nearest_rack() -> Vector2:
+	var from := local.global_position if local else Vector2(240, 135)
+	var best: Vector2 = ShipFire.RACKS[0]
+	for p: Vector2 in ShipFire.RACKS:
+		if from.distance_to(p) < from.distance_to(best):
+			best = p
+	return best
+
+
+func _first_fire() -> Vector2:
+	var fires: Array = _state.get("fires", [])
+	if fires.is_empty():
+		return Vector2(240, 135)
+	var from := local.global_position if local else Vector2(240, 135)
+	var best: Dictionary = fires[0]
+	for f: Dictionary in fires:
+		if from.distance_to(Vector2(f.x, f.y)) < from.distance_to(Vector2(best.x, best.y)):
+			best = f
+	return Vector2(float(best.x), float(best.y))
+
+
+func _near_fire() -> bool:
+	return local != null and local.global_position.distance_to(_first_fire()) < ShipFire.FLAME_REACH + 6.0
+
+
+func _near_hatch() -> bool:
+	return local != null and local.global_position.distance_to(ShipEva.HATCH) < ShipEva.REACH + 4.0
+
+
+func _plan_open() -> bool:
+	var st := _station("team")
+	return st != null and st.minigame() is PlanBoard
+
+
+func _has_plan() -> bool:
+	return not _state.get("plan", {}).is_empty()
+
+
+## An unplanned forecast item within the holo-table's alert range (same rule as Station._plan_alert).
+func _plan_due() -> bool:
+	var day := float(_state.get("day", 0.0))
+	for item: Dictionary in _state.get("forecast", []):
+		var ahead := float(item.day) - day
+		if not item.done and not _state.get("plan", {}).has(str(item.id)) \
+				and ahead >= PlanBoard.LEAD_DAYS and ahead < Station.PLAN_ALERT_DAYS:
+			return true
+	return false
 
 
 func _moi_done() -> bool:

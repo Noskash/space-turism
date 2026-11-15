@@ -18,7 +18,11 @@ static func enter(w: Window) -> Dictionary:
 	w.content_scale_size = BASE_SIZE
 	w.content_scale_mode = Window.CONTENT_SCALE_MODE_CANVAS_ITEMS
 	w.content_scale_aspect = Window.CONTENT_SCALE_ASPECT_KEEP
-	w.content_scale_stretch = Window.CONTENT_SCALE_STRETCH_INTEGER
+	# Phones: whole-number scaling wastes a third of a small screen (390 px tall -> x1), so mobile browsers
+	# scale fractionally and fill it. Desktop and desktop browsers keep crisp integer pixels.
+	var phone := OS.has_feature("web_android") or OS.has_feature("web_ios")
+	w.content_scale_stretch = Window.CONTENT_SCALE_STRETCH_FRACTIONAL if phone else Window.CONTENT_SCALE_STRETCH_INTEGER
+	TouchControls.ensure(w)   # phones / tablets: joystick + USE (hidden until the first touch)
 	return saved
 
 

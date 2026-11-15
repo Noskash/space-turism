@@ -25,6 +25,7 @@ const LIGHTS := [
 	[24, 59, 34, 0.5, Color("5cf07a"), 3],       # computer screens (HangarDecor)
 	[454, 77, 34, 0.5, Color("4fd8ff"), 3],
 	[400, 174, 36, 0.36, Color("4fd8ff"), 3],     # planner console
+	[82, 158, 30, 0.30, Color("ffd8a0"), 3],      # suit-up locker mirror lamp (HangarDecor)
 ]
 const RADIO_LIGHT := [375, 92, 36]
 

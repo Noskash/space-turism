@@ -25,6 +25,9 @@ func setup(leader_node: Node2D, skin: String) -> void:
 func _physics_process(_delta: float) -> void:
 	if not is_instance_valid(leader) or _sprite == null:
 		return
+	if not leader.visible:   # the leader is on a spacewalk (CrewMember.eva): wait inside by the airlock
+		_trail = PackedVector2Array([position])
+		return
 	var lead := leader.global_position
 	if _trail[_trail.size() - 1].distance_to(lead) > 0.5:
 		_trail.append(lead)

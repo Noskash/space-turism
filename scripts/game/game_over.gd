@@ -10,6 +10,9 @@ const MENU_SCENE := "res://scenes/main_menu.tscn"
 const DESIGNER_SCENE := "res://scenes/design/hangar.tscn"
 
 var _reason := ""
+var _state := {}                 # last sim state (crew credits)
+var _credits := false            # C: crew credits over the wreck
+var _credits_t := 0.0
 var _canvas: Node2D
 var _t := 0.0
 const DOOM := 2.6               # = Vfx.DOOM_TIME: the explosions play before the ship breaks up
@@ -26,6 +29,8 @@ func _ready() -> void:
 	add_child(_canvas)
 	visible = false
 	Events.state_changed.connect(func(s: Dictionary) -> void:
+		if _reason == "":
+			_state = s
 		if _reason == "" and s.get("lost", "") != "":
 			_show(str(s.lost)))
 
@@ -49,6 +54,7 @@ func _process(delta: float) -> void:
 		return
 	var before := _t
 	_t += delta
+	_credits_t += delta
 	if before < DOOM and _t >= DOOM:
 		_break_up()
 	for s in _shards:
@@ -98,10 +104,19 @@ func _break_up() -> void:
 						spin = rng.randf_range(-1.2, 1.2)})
 
 
+## The panel is up and reads keys (TouchControls puts AGAIN / CREDITS / MENU buttons on phones).
+func takes_input() -> bool:
+	return _reason != "" and _t >= DOOM + 1.5
+
+
 func _input(event: InputEvent) -> void:
-	if _reason == "" or _t < DOOM + 1.5 or not (event is InputEventKey and event.pressed and not event.echo):
+	if not takes_input() or not (event is InputEventKey and event.pressed and not event.echo):
 		return
 	match event.physical_keycode:
+		KEY_C:
+			_credits = not _credits
+			_credits_t = 0.0
+			Sfx.play("page")
 		KEY_SPACE, KEY_ENTER:
 			if not Network.is_in_room():
 				get_tree().change_scene_to_file(DESIGNER_SCENE)
@@ -142,7 +157,15 @@ func _draw_panel() -> void:
 	for i in lines.size():
 		_centered(lines[i].strip_edges().to_upper(), 132 + i * 11, 9, Color(1, 1, 1, k))
 	_centered("A tougher hull (Heavy class, Whipple shield) means fewer breaches.", 160, 7, Color(0.6, 0.65, 0.75, k))
-	var keys := "ESC: LEAVE" if Network.is_in_room() else "SPACE: REDESIGN THE SHIP     ESC: MAIN MENU"
+	var keys := "C: CREW CREDITS   " + ("ESC: LEAVE" if Network.is_in_room() else "SPACE: REDESIGN   ESC: MAIN MENU")
+	if _credits:
+		var cb := Rect2(36, 16, 408, 238)
+		c.draw_rect(Rect2(0, 0, 480, 270), Color("05030a"))
+		c.draw_rect(cb, Color(0.055, 0.03, 0.06))
+		c.draw_rect(cb, Color(1.0, 0.3, 0.3), false, 1.0)
+		CrewCredits.draw(c, cb, _state, _credits_t, Color(1.0, 0.45, 0.4))
+		_centered("C: BACK   " + keys.trim_prefix("C: CREW CREDITS   "), cb.end.y - 6, 8, Color("ffc640"))
+		return
 	if _t > DOOM + 1.5:
 		_centered(keys, 180, 8, Color("ffc640") if fmod(_t, 1.2) < 0.8 else Color("9a8040"))
 

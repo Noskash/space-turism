@@ -30,7 +30,13 @@ func _ready() -> void:
 	_build_cards()
 	create_tween().tween_property(_fade, "color:a", 0.0, 0.4)
 	if not _cards.is_empty():
-		_cards[clampi(_last_selected, 0, _cards.size() - 1)].grab_focus()
+		var pick := clampi(_last_selected, 0, _cards.size() - 1)
+		if _cards[pick].is_locked():   # start on a level you can actually fly
+			for i in _cards.size():
+				if not _cards[i].is_locked():
+					pick = i
+					break
+		_cards[pick].grab_focus()
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -65,6 +71,11 @@ func _create_room(data: LevelData, number: int, card: LevelCard) -> void:
 	if _busy:
 		return
 	_last_selected = _cards.find(card)
+	if not data.available:
+		Sfx.play("denied")
+		card.shake()
+		_show_notice("%s: under development - not available yet. Fly to Mars!" % data.title)
+		return
 	if data.has_missions:   # Mars: pick one of the campaign missions first (it creates the room)
 		MissionSelect.level = data
 		MissionSelect.level_number = number

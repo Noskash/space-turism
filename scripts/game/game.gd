@@ -59,6 +59,7 @@ func _ready() -> void:
 	ShipLighting.new().setup(self, _map, _crew)
 	HullDamage.new().setup(self, _map, _crew)
 	ShipFire.new().setup(self, _crew)      # flames + extinguisher racks
+	ShipEva.new().setup(self, _crew)       # Bridge airlock: spacewalks to fix the outside of the ship
 	CrewPings.new().setup(self)            # G: crew call-outs
 	add_child(GameOver.new())
 	add_child(MissionReport.new())   # campaign missions: report after Mars Orbit Insertion
@@ -73,6 +74,7 @@ func _ready() -> void:
 	Sfx.set_loop("engine", true)
 	if _net.is_authority():
 		_mission.crew_size = maxi(Network.players.size(), 1) if _net.active else 1
+		_mission.local_key = str(_local.name) if _local else "P1"   # crew credits for the host's own actions
 		_mission.start(DesignRules.chosen)  # clients get the host's state through NetSync
 		_mission.set_crew(_roster())
 	Events.state_changed.connect(_apply_crew_health)
@@ -102,6 +104,8 @@ func _ready() -> void:
 		 body = "COM: HOLD SPACE to send data home - only while a Deep Space Network station is in view and the transmitter is on. Full storage = lost science."},
 		{title = "Science lab", rect = UiKit.world_rect(Rect2(160, 34, 164, 80)),
 		 body = "SCI: when a science window opens, HOLD SPACE to observe (instruments ON). Science goes into storage (DATA bar) and only SCORES once Comms sends it home. Full storage = new science is lost."},
+		{title = "Mission Hub + airlock", rect = UiKit.world_rect(Rect2(160, 138, 290, 112)),
+		 body = "The MISSION HUB table holds the FLIGHT PLAN: comet trails, asteroids and more ahead of you - plan them early. The round hatch on the BRIDGE floor is the AIRLOCK: when something breaks OUTSIDE, anyone with empty hands suits up there."},
 		{title = "Events", rect = Rect2(UiKit.hud_rect("progress").position.x, UiKit.hud_rect("progress").end.y + 2, UiKit.hud_rect("progress").size.x, 14),
 		 body = "Radiation storms, comet debris, faults, science windows... Big ones slide a banner across the screen, then stay here with a countdown. The first time each one happens, a walkthrough shows you how to beat it."},
 		{title = "Missed tickets",
@@ -114,6 +118,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if _net.is_authority() and not Tutorial.any_open():  # cruise tutorial or an event walkthrough
 		_mission.crew_rooms = _crew_rooms()
+		_note_crew(delta)
 		_mission.tick(delta)
 
 
@@ -128,12 +133,25 @@ func _roster() -> Dictionary:
 	return out
 
 
+var _last_pos := {}   # crew key -> position last frame (walking distance for the crew credits)
+
+
+## Host only: distance walked + time on spacewalks, per crew member (MissionReport CREW CREDITS).
+func _note_crew(delta: float) -> void:
+	for member in _crew.get_children():
+		if member is CrewMember:
+			var key := str(member.name)
+			var d: float = member.position.distance_to(_last_pos.get(key, member.position))
+			_last_pos[key] = member.position
+			_mission.note_crew(key, d if d < 20.0 and not member.eva else 0.0, delta if member.eva else 0.0)
+
+
 ## Host only: which room each crew member stands in (the Cargo bay is the storm shelter).
 func _crew_rooms() -> Dictionary:
 	var out := {}
 	for member in _crew.get_children():
 		if member is CrewMember:
-			out[str(member.name)] = _map.room_at(member.position)
+			out[str(member.name)] = "eva" if member.eva else _map.room_at(member.position)   # outside = no shelter
 	return out
 
 
@@ -164,7 +182,7 @@ func _spawn_crew() -> void:
 			_local = member
 	_net.local_crew = _local
 	if _local:
-		_hud.show_role(CrewRoles.tag(_local.role), str(Network.players.get(Network.my_id(), "")))
+		_hud.show_role(CrewRoles.tag(_local.role), NetText.player(str(Network.players.get(Network.my_id(), ""))))
 
 
 func _add_crew(node_name: String, role: String, index: int, is_remote: bool) -> CrewMember:
@@ -176,6 +194,9 @@ func _add_crew(node_name: String, role: String, index: int, is_remote: bool) -> 
 	if _net.active:  # name tag in co-op (role-coloured)
 		member.display_name = str(Network.players.get(node_name.trim_prefix("Crew_").to_int(), ""))
 	member.skin = PLAYER_SKINS[index % 2]
+	var saved: Variant = CharacterSelect.saved_skin()   # the look picked at the hangar's suit-up locker
+	if not is_remote and saved != null and (saved == "" or CrewSprite.has_skin(saved)):
+		member.skin = saved   # remote crew arrive with their own pick through the crew snapshot
 	member.ship_map = _map
 	member.position = _map.spawn_point(index)
 	_crew.add_child(member)

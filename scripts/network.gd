@@ -103,6 +103,8 @@ func my_id() -> int:
 ## Через интернет код комнаты придёт позже сигналом code_received (лобби уже можно открывать).
 func create_room(level_data: LevelData, number: int, port := DEFAULT_PORT) -> Error:
 	leave_room()
+	if OS.has_feature("web"):
+		online = true   # browsers have no ENet / UDP: always the WebSocket relay
 	if online:
 		var relay := RelayPeer.host(relay_url)
 		relay.code_received.connect(_on_code_received)
@@ -127,6 +129,8 @@ func create_room(level_data: LevelData, number: int, port := DEFAULT_PORT) -> Er
 func set_online(value: bool) -> Error:
 	if online == value:
 		return OK
+	if OS.has_feature("web") and not value:
+		return ERR_UNAVAILABLE   # no LAN (ENet) in a browser
 	online = value
 	if not is_host():
 		return OK
@@ -146,6 +150,8 @@ func join_room(address: String) -> Error:
 		state = State.CONNECTING
 		_connect_timer.start()
 		return OK
+	if OS.has_feature("web"):
+		return ERR_UNAVAILABLE   # browsers can only join by room code (relay)
 	var parsed := parse_address(address)
 	if parsed.is_empty():
 		return ERR_INVALID_PARAMETER

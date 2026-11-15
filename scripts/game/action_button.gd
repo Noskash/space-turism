@@ -35,6 +35,10 @@ func info() -> Dictionary:
 	if other:
 		inf.merge({icon = "dock", verb = CrewRoles.tag(other.role) + " ONLY"}, true)  # another role's station
 		return inf
+	if ShipEva.current and ShipEva.current.airlock_in_reach(local.global_position):
+		var hands_full: bool = local.has_toolbox or local.has_extinguisher
+		inf.merge({icon = "spacewalk", verb = "HANDS FULL" if hands_full else "SPACEWALK", enabled = not hands_full}, true)
+		return inf
 	if RadioSet.in_reach(local.global_position):
 		inf.merge({icon = "radio", verb = "RADIO", enabled = true}, true)
 	return inf

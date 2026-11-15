@@ -18,15 +18,19 @@ const ITEMS := [
 	{kind = "flower", x = 356, y = 217, variant = "yellow"},
 	{kind = "mug", x = 131, y = 99},
 	{kind = "radio", x = 375, y = 100},
+	{kind = "locker", x = 82, y = 190},
 ]
 ## Collision per kind, relative to the feet. Bench props (mug, radio) sit on a bench that is already a wall.
 const BLOCK := {
 	computer = Rect2(-15, -8, 30, 8),
 	fern = Rect2(-5, -5, 10, 5),
 	flower = Rect2(-4, -4, 8, 4),
+	locker = Rect2(-17, -7, 34, 7),
 }
 const RADIO_USE := Vector2(397, 101)   # stand at the bench's right end (the prompt then clears the set)
 const RADIO_REACH := 14.0
+const LOCKER_USE := Vector2(82, 197)  # in front of the suit-up locker (CharacterSelect)
+const LOCKER_REACH := 14.0
 
 var kind := ""
 var variant := ""
@@ -89,6 +93,7 @@ func _draw() -> void:
 		"flower": _draw_flower()
 		"mug": _draw_mug()
 		"radio": _draw_radio()
+		"locker": _draw_locker()
 
 
 func _r(x: float, y: float, w: float, h: float, c: Color) -> void:
@@ -269,6 +274,44 @@ func _draw_radio() -> void:
 		_r(p.x, p.y, 2, 2, c)
 		_r(p.x + 1, p.y - 4, 1, 4, c)
 		_r(p.x + 2, p.y - 4, 1, 1, c)
+
+
+# --- suit-up locker (character select) ----------------------------------------------------
+
+## Four crew lockers with role-coloured name tapes; the second door hangs open on a flight suit,
+## a small mirror on top with a lamp that blinks now and then. SPACE in front = CharacterSelect.
+func _draw_locker() -> void:
+	var roles := [Color("4fd8ff"), Color("ff9a3c"), Color("5cf07a"), Color("c07cff")]
+	_r(-18, -1, 36, 2, SHADOW)
+	_r(-17, -30, 34, 30, INK)
+	for i in 4:
+		var x := -16 + i * 8
+		var open := i == 1
+		_r(x, -29, 7, 28, Color("2a2f44") if open else Color("6a7490"))
+		if open:
+			# inside: hanger rail + a hanging flight suit in the navigator's colour
+			_r(x + 1, -27, 5, 1, Color("aab4c8"))
+			_r(x + 2, -26, 3, 9, Color("2a8aa8"))
+			_r(x + 2, -26, 3, 1, Color("4fd8ff"))
+			_r(x + 2, -17, 1, 5, Color("2a8aa8"))
+			_r(x + 4, -17, 1, 5, Color("2a8aa8"))
+			_r(x + 1, -8, 5, 3, Color("f0f0f0"))   # helmet on the shelf
+			_r(x + 2, -7, 3, 1, Color("1b2a4a"))
+		else:
+			_r(x, -29, 7, 1, Color("8a93b0"))
+			_r(x + 6, -28, 1, 27, Color("4a5470"))
+			for v in 3:
+				_r(x + 1, -26 + v * 2, 5, 1, Color("3a4258"))   # vents
+			_r(x + 5, -15, 1, 3, Color("c8d0e0"))   # handle
+		_r(x, -11 if not open else -30, 7, 2 if not open else 1, roles[i])   # name tape
+	# the open door swung out to the left of its frame
+	_r(-11, -29, 2, 28, Color("8a93b0"))
+	_r(-11, -29, 1, 28, Color("b4bcd0"))
+	# mirror + lamp on top
+	_r(-6, -37, 12, 7, INK)
+	_r(-5, -36, 10, 5, Color("9ab8d8"))
+	_r(-5, -36, 3, 1, Color(1, 1, 1, 0.7))
+	_r(-1, -39, 2, 2, Color("ffd8a0") if fmod(_t + _phase, 3.0) < 2.7 else Color("6a5030"))
 
 
 ## Dust drifting through the skylight shafts: bright inside a shaft, barely visible outside.

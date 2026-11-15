@@ -14,6 +14,7 @@ shader_parameter/warp = 0.0
 [sub_resource type="Resource" id="Resource_moon"]
 script = ExtResource("4_data")
 title = "Луна"
+available = false
 description = "Облёт кратеров и прогулка в лёгкой гравитации — для первого полёта."
 accent_color = Color(0.7, 0.82, 1, 1)
 planet_color_a = Color(0.26, 0.26, 0.28, 1)
@@ -34,6 +35,7 @@ atmosphere_color = Color(1, 0.5, 0.3, 1)
 [sub_resource type="Resource" id="Resource_saturn"]
 script = ExtResource("4_data")
 title = "Сатурн"
+available = false
 description = "Самый дальний маршрут: полёт вдоль колец и вид на полярный шторм."
 accent_color = Color(1, 0.8, 0.4, 1)
 planet_color_a = Color(0.62, 0.48, 0.28, 1)

@@ -77,6 +77,8 @@ func open() -> void:
 	if visible:
 		return
 	_items = ["resume", "briefing", "codex", "help", "sound", "music", "text", "fullscreen", "leave", "quit"]
+	if OS.has_feature("web"):
+		_items.erase("quit")   # a browser tab can't quit itself
 	if get_parent().get_node_or_null("Tutorial") == null:
 		_items.erase("help")
 	if Missions.current().is_empty():
@@ -247,6 +249,10 @@ func _activate(item: String) -> void:
 			if item == "quit":
 				get_tree().quit()
 				return
+			# A co-op client's tree is paused by the HOST (everyone had the menu open): unpause it here,
+			# or the main menu arrives frozen (its fade-in tween never runs).
+			_set_tree_paused(false)
+			get_tree().paused = false
 			if Network.is_in_room():
 				Network.leave_room()  # the host leaving closes the room for everyone
 			get_tree().change_scene_to_file(MENU_SCENE)

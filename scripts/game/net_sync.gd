@@ -86,6 +86,7 @@ func _client_ready() -> void:
 @rpc("any_peer", "call_remote", "reliable")
 func _submit_action(role: String, action: Dictionary) -> void:
 	if is_inside_tree() and Network.is_host():
+		action["by"] = "Crew_%d" % multiplayer.get_remote_sender_id()   # crew credits: who did it
 		Events.action_requested.emit(role, action)
 
 

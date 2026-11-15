@@ -114,6 +114,15 @@ over also return here). The menu Designer (`designer.tscn` → `planner.tscn`) s
   (never un-readies), target kind "radio" at `RADIO_USE`; audio = `Radio` driven by `Radio.tune(on, track)` (no sim here),
   prompt names the track, a sign shows the title for 4 s after a change. Moving a prop = edit `ITEMS` + the matching
   light in `LIGHTS`.
+- **Suit-up locker = character select** (built 2026-11-15): `HangarDecor` "locker" prop (feet 82,190, by the crew spawn,
+  `LOCKER_USE` + a mirror-lamp light). SPACE there opens `CharacterSelect` (`scripts/design/character_select.gd`, CanvasLayer 15,
+  `Tutorial.hold()` while open): your LOOK (crew skin, "" = classic role-coloured flight suit) big at integer scale on a
+  procedural pixel backdrop (Earth from orbit / SLC-41 pad at night / blue Gale-crater sunset), plus "YOU FLY AS" = the
+  astronaut of your crew role (name + bio from `astronauts.json`; role-bound because the cruise dose bars + report key on
+  it). A/D or arrows / click browse, SPACE / click = wear + close, Q closes. Look texts + captions: `data/characters.json`.
+  Picking sets `_local.skin` (synced via the crew snapshot) and saves it to `user://character.cfg`
+  (`CharacterSelect.saved_skin()`, applied at hangar spawn). The K skin-cycle key is gone from the hangar (still in the
+  cruise). Not yet: the cruise (`game.gd`) still assigns skins by player index, so the pick does not carry into flight.
 - New key: F = `inspect` (Controls). Tutorial id "hangar" (7 panes); MissionBriefing first, as in the designer.
 - TEXT SIZE: board numbers are painted into fixed map boxes (`SIGN_PX` 6, ignore the setting); the F card is laid
   out from rows (`_card_rows`) so it grows with the text; prompts sit on a dark plate. The planner (both modes) caps
@@ -352,6 +361,55 @@ Picked from a list of "more fun" ideas; next after this = EDL landing finale ("7
   Station verbs HEATER ON / FROZEN, report reason from `stats.freezes / frozen_time`. Mission flag `freeze` (default on).
 - New sounds (gen_sounds.py, appended so old WAVs are unchanged): klaxon, whoosh, ignite, fire (loop), spray (loop),
   ping, perfect. New 8x8 icons: fire (own colours), extinguisher, ping.
+- **Spacewalks / EVA** (built 2026-11-15; SIMPLIFIED, real basis: STS-120 2007 torn ISS solar wing fixed on a spacewalk,
+  Galileo 1991 dish never opened (no crew), ISS 2013 emergency spacewalk for an ammonia coolant leak; a suit lasts ~8 h).
+  Sim (`fake_mission` "Spacewalks"): outside faults `EVA_FAULTS` solar_wing (solar x0.5, `_solar_w()`), dish (downlink
+  x0.35), radiator (+40 W of bus heat: base kit -> fire in ~40 s). Ticket kind "eva", role "team", no timer, not
+  workable at stations; opened every `EVA_GAP` 60-80 s (first `EVA_FIRST` 38 s, mission `eva_first`) and by 30%
+  (`EVA_ON_HIT`) of hits that breach nothing. Action `{type = "eva_fix", id}`. Stats `eva_faults / eva_fixes /
+  eva_open (s) / eva_storm`; report reasons. Mission flag `eva` (default on).
+  Inside: `ShipEva` (`scripts/game/ship_eva.gd`) = round airlock hatch in the Bridge floor (`HATCH` 424,190; lamp amber =
+  job waiting, green = someone out) + spacewalkers drawn on the roof with a tether. SPACE on it, hands empty (ActionButton
+  "SPACEWALK") -> `EvaView` (`scripts/game/eva_view.gd`, CanvasLayer 15, holds input): the roof from outside (interior
+  coords x `K` 0.7, `to_outside/to_inside`), solar wings, dish, radiator, engine bells, yellow handrails; airlock cycles
+  1.3 s, WASD on magnetic boots (46 px/s, stays on hull + masts), HOLD SPACE at a job (3 bolts = work_time), SPACE/Q at the
+  hatch = in. Suit O2 `O2_TIME` 75 s, then the tether reels you in. Storm / debris warnings say GET INSIDE.
+  `CrewMember.eva` (snapshot[10]) hides the body inside; its position follows the walker (mapped back), host room "eva" =
+  storm dose x1.5 (`EVA_STORM`, no shelter). No sound outside: ship hum muted, breathing loop, muffled `step_eva`.
+  Codex `eva`; icons `eva` (8x8), `spacewalk` (16x16).
+- **Crew credits** (end-credits dashboard, built 2026-11-15): the sim tallies who did what in `state.team[crew key]`
+  (`_credit`: tickets, perfect/good/late, repairs, science, storms, burns, switches, sent (downlinker), fires, patches, eva,
+  dodges, pings, moi; `note_crew` from the host's game.gd: walked px, eva_time). Who = `action.by`, stamped by the host's
+  NetSync on client actions ("Crew_<peer>"), else `local_key` (the host's own crew). `CrewCredits`
+  (`scripts/game/crew_credits.gd`): MERIT ranking (`MERIT` weights; NOT the score, hard rule 4), MVP + awards (one per stat
+  leader, `AWARDS`), stat chips, "TOGETHER" footer. Shown as the LAST MissionReport page ("team") and on GameOver (C).
+- **Footsteps**: `CrewMember._footsteps()` (every crew member, hangar + cruise): `step_walk` / `step_run` every `STRIDE`
+  20 / 21 px (matches the walk animation), alternating feet, remote crew -6 dB, none while shoved / docked / outside.
+  Vfx only draws the dust now. New sounds: step_walk, step_run, step_eva, breath (loop), airlock.
+
+## Flight plan + gentle start + first-time walkthroughs (built 2026-11-15)
+- **Forecast** (`scripts/game/forecast.gd`, `Forecast.make`): missions with an end get `state.forecast`
+  `[{id, kind comet|asteroid|cold|conjunction, name, fact, day, role, done, result}]` at start: real named comet trails
+  (Encke, Halley, Swift-Tuttle, Tempel-Tuttle, Giacobini-Zinner, Siding Spring) on the days the debris timer would have
+  fired, 2 real near-Earth asteroids (Eros, Ganymed, Bennu, Ryugu, Itokawa, Phaethon, Toutatis), the cold zone (first day
+  the tanks would settle below 2 C without the heater; none with RTG + radiator), the conjunction. In forecast mode the
+  debris timer is off: comets start from `_tick_forecast` (`_start_dust(name)`, `dust.name`). Endless mission "" = old timer.
+- **PlanBoard** (`scripts/game/plan_board.gd`, CanvasLayer 15): Mission Hub holo-table (Station role "team") with no storm
+  ticket -> SPACE = "PLAN" (icon `holo`). Timeline Earth -> Mars + info card; A/D or click pick, SPACE / button = `{type = "plan",
+  id}` -> `state.plan {id: crew key}` (toggle; refused closer than `PLAN_LEAD` 6 days). Holo-table "!" when an unplanned item
+  is < 45 days ahead (`Station.PLAN_ALERT_DAYS`). Effects when the day comes: comet planned = stored burn (-2% fuel, shove,
+  no debris; fails if fuel frozen / Bridge offline), asteroid planned = scientist ticket "flyby" (2x science, like a science
+  window), cold planned = heater thermostat (on < 12 C, off > 15 C), conjunction planned = DSN forced in view during the
+  warning. Stats `plan_made / plan_missed / plan_failed / flybys` -> report reason (PLAN vs ACTUAL), credits stat + award
+  "MISSION PLANNER". Codex `flight_plan`, `near_earth_asteroid`. Icons `comet`, `asteroid`, `plan` (8x8), `holo` (16x16).
+- **Gentle start** (`fake_mission`): no tickets for `QUIET_START` 10 s, ticket gaps x1.8 -> x1 over 60 s, first storm /
+  debris / EVA never before 28 / 45 / 55 s (x pace), and `_intro_ok(kind)`: every mechanic's FIRST appearance waits
+  `NEW_GAP` 14 s after the previous first (random ticket kinds, storm, debris, eva). Consequences (fire, freeze, leak) aren't gated.
+- **First-time walkthroughs** added to EventGuide: fire (rank 2, like breach), freeze, fuel_leak, eva (airlock arrow),
+  power_up, flyby, plan (fires once something is plannable and it is calm). Hangar tutorial has a "Suit up" pane (locker);
+  cruise tutorial a "Mission Hub + airlock" pane. Players who already saw those tutorials see the new panes with H.
+- **Level select**: `LevelData.available` (false for Moon + Saturn) -> dimmed card with a hazard-taped "UNDER DEVELOPMENT /
+  NOT AVAILABLE YET" sign; pressing it shakes + notice; focus starts on the first playable card.
 
 ## Radio (`scripts/game/radio_set.gd` object + `scripts/game/radio.gd` audio)
 - A boombox on the Mission Hub bench (RadioSet, use point 308,158). Walk up, SPACE = on/off
@@ -438,8 +496,25 @@ Picked from a list of "more fun" ideas; next after this = EDL landing finale ("7
 - `MinigameFrame` (`scripts/ui/minigame_frame.gd`): dim backdrop, big frame in the station colour, title bar
   with icon, Q CLOSE key cap, deadline bar, footer hint + note, stamp. Full-screen games use `draw_bar`.
 - New class_name files need one editor scan (or `--headless --import`) before `-s` scripts can see them.
-- Not yet on the kit: the Control-based menus (main menu, level select, lobby, join, characters; `space_theme.tres`).
-  Still in the older flat look (work, just not on the kit yet): mission report, codex, briefing, mission select,
+- **Menu screens on the kit** (built 2026-11-15): mission select, join, lobby. All `_draw()` at 480x270 (`PixelMode`,
+  TEXT SIZE capped at LARGE), shared pieces in `MenuKit` (`scripts/ui/menu_kit.gd`): cached backdrop (space + Bayer-dithered
+  nebula + big banded Mars, variants `low_right` / `low_left` / `high_right`), twinkling stars that streak in the lobby's
+  hyperspace `warp`, `planet_tex` / `mars_tex`, chunky `button` (face over a dark lip, lifts when hot), `key_hints` (keycap
+  rows), `title` plate, `tag` chips, `toggle` switch, `pixel_star`, `crewmate` (role-coloured suit), `toast`.
+  - Mission select: 4 cards (header chip + year, Mars with orbiting ship, GOALS + THREATS chips, pixel stars + PTS); the
+    selected card lifts and bounces with an arrow; LESSON strip under the cards (sandbox: what the hot switch does);
+    sandbox switches = icon + name + toggle, FLY SANDBOX button; BACK button for mouse/touch. `_wrap` + `SANDBOX_NAMES` are
+    still used by other screens - keep them.
+  - Join: only the LineEdit is a Control (typing, IME, web keyboard); kit frame, input well, live ONLINE CODE / LOCAL IP
+    chips, status line (alert icon + shake on errors), JOIN / BACK buttons.
+  - Lobby: root draws backdrop + stars, child `Content` draws the UI (fades for the jump). Mission/level card, room code
+    as 4 letter tiles (pop when the code arrives) or the LAN address, PLAY ON LAN / ONLINE switch while alone, 4 crew
+    slots coloured by the role each player will get (`CrewRoles.assign`), HOST / YOU chips, START FLIGHT. Keyboard: A/D
+    move focus between START / mode / CLOSE, ENTER or SPACE press, ESC leaves.
+  - These screens are English: the kit font has no Cyrillic. `NetText` (`scripts/ui/net_text.gd`) maps Network's Russian
+    messages + "Игрок N" names to English for display only (network.gd unchanged).
+- Not yet on the kit: main menu, level select (+ `LevelCard`), characters (`space_theme.tres`, Russian).
+  Still in the older flat look (work, just not on the kit yet): mission report, codex, briefing,
   launch report, game over, radar screen, crew dose panel (`CrewPanel`, bottom left above the "you" block).
 
 ## Cruise gameplay (decided 2026-11-14)
@@ -627,15 +702,15 @@ different ways → both succeed with different scores → NASA comparison.
 Gameplay picks (real crew/mission problems):
 1. **Solar power fades with distance** — sim solar output x 1/r² (100% -> ~43% at Mars); lighting already shows it,
    fake_mission does not. ~1 h.
-2. **Team page and mission phases report** — MissionReport TEAM page (who did what, unattended stations, handoffs)
-   + per-phase breakdown design -> launch -> cruise -> MOI -> orbit (NASA brief: collaboration, post-mission analysis).
+2. **Team page and mission phases report** — TEAM page DONE (Crew credits, above). Still open: unattended stations,
+   handoffs, per-phase breakdown design -> launch -> cruise -> MOI -> orbit (NASA brief: post-mission analysis).
 3. **Backup B-side redundancy upgrade** — new upgrade (mass + power): a broken station switches to its backup with
    a short hold instead of a long repair, once (real probes carry A/B computers, IMUs, wheels).
 
 Planning picks (NASA brief: "mission planning", "launch planning", "mission timeline", "end-of-mission planning"):
 4. **Launch window planner** — DONE (logic + screen, see section above; hub console art ready, not placed). Was: the missing phase 2: pick the launch date, dotted transfer path + ghost Mars,
    date sets Δv / fuel left / trip time (Mars windows every ~26 months). Needs the orbit sim (`predict_path()` is a stub).
-5. **Mission timeline on the holo-table** — team places plan blocks on day 0..259 (correction burns, pre-conjunction
+5. **Mission timeline on the holo-table** — FIRST VERSION DONE (Flight plan, above: forecast items, not free blocks). Was: team places plan blocks on day 0..259 (correction burns, pre-conjunction
    recording, drain recorder before MOI); they become scheduled tickets; report PLAN vs ACTUAL. Makes PLAN a real role.
 6. **End-of-mission orbit disposal planning** — keep fuel to raise the orbit at end of life (planetary protection);
    plugs into the orbit lifetime calculation.

@@ -53,6 +53,9 @@ func _ready() -> void:
 	apply_volume()
 	_player = AudioStreamPlayer.new()
 	_player.bus = BUS
+	# Web: the default "sample" playback decodes a whole track into one Web Audio buffer; a 2-minute stereo
+	# track is too big (createBuffer throws and the game loop dies). Stream it instead (desktop ignores this).
+	_player.playback_type = AudioServer.PLAYBACK_TYPE_STREAM
 	_player.finished.connect(func() -> void: _play(wrapi(_index + 1, 0, TRACKS.size())))
 	add_child(_player)
 	Events.state_changed.connect(_on_state)

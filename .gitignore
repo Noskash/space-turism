@@ -4,3 +4,6 @@
 
 # Собранные версии игры
 build/
+
+# Claude Code agent worktrees
+.claude/worktrees/

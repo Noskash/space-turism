@@ -30,6 +30,7 @@ var _offline := false
 var _burning := false    # a fire in this station's room: "TOO HOT", the sim refuses its verbs
 var _dust := {}          # state.dust (Navigator flies through comet debris from the Bridge)
 ## Room each station stands in (same table as fake_mission STATION_ROOMS).
+const PLAN_ALERT_DAYS := 45.0   # holo-table "!" when an unplanned forecast item is this close
 const ROOMS := {comms = "comms", scientist = "science", engineer = "engineering", navigator = "bridge", team = "hub"}
 var _game: Node = null   # minigame this station opened for the local player (DodgeGame / ShieldGame)
 
@@ -64,7 +65,20 @@ func can_reach(point: Vector2) -> bool:
 
 
 func has_alert() -> bool:
-	return _offline or not _ticket.is_empty() or _dodging() or _send_alert()
+	return _offline or not _ticket.is_empty() or _dodging() or _send_alert() or _plan_alert()
+
+
+## Holo-table: something on the forecast is coming soon and nobody planned it yet (pulls a player over).
+func _plan_alert() -> bool:
+	if role != "team":
+		return false
+	var day := float(_state.get("day", 0.0))
+	var plan: Dictionary = _state.get("plan", {})
+	for item: Dictionary in _state.get("forecast", []):
+		var ahead := float(item.day) - day
+		if not item.done and not plan.has(str(item.id)) and ahead >= PlanBoard.LEAD_DAYS and ahead < PLAN_ALERT_DAYS:
+			return true
+	return false
 
 
 ## Comms while a DSN station is in view and science is waiting in the recorder: the downlink is
@@ -153,6 +167,8 @@ func set_holding(on: bool) -> void:
 			_tick_left = 0.0
 		elif _offline:
 			Sfx.play("denied")
+		elif role == "team" and _game == null and _local_docked():   # holo-table: the flight plan
+			_open_plan_board()
 		elif role == "comms":
 			_downlinking = true
 			_send({type = "downlink", on = true})
@@ -238,6 +254,16 @@ func _open_safe_mode_game() -> void:
 	_open(game)
 
 
+func _open_plan_board() -> void:
+	if _state.get("forecast", []).is_empty():
+		Sfx.play("denied")
+		return
+	var board := PlanBoard.new()
+	board.state = _state
+	board.send = _send
+	_open(board)
+
+
 func _open(game: Node) -> void:
 	_game = game
 	set_holding(false)
@@ -261,11 +287,13 @@ func _on_state_changed(state: Dictionary) -> void:
 			_burning = true
 	_ticket = {}
 	for event: Dictionary in state.get("events", []):
-		if event.role != role or event.get("kind", "") in ["dust", "fire"]:
-			continue  # the dust stream is dodged, fires are put out with an extinguisher
+		if event.role != role or event.get("kind", "") in ["dust", "fire", "eva"]:
+			continue  # the dust stream is dodged, fires are put out with an extinguisher, EVA jobs outside
 		# Repairs first: an offline station can do nothing else.
 		if _ticket.is_empty() or (event.repair and not _ticket.repair):
 			_ticket = event
+	if _game is PlanBoard:
+		_game.state = state
 	# A running storm minigame shows the sim's real countdown, not its own drifting copy.
 	if (_game is ShieldGame or _game is SafeModeGame) and _ticket.get("kind", "") in ["shields", "safe_mode"]:
 		_game.deadline = float(_ticket.time_left)
@@ -295,7 +323,7 @@ func action_info() -> Dictionary:
 			info.merge({icon = "power", verb = "POWER UP", hold = true}, true)
 		elif kind == "freeze":
 			info.merge({icon = "power", verb = "HEATER ON", hold = true}, true)
-		elif kind == "science_window":
+		elif kind in ["science_window", "flyby"]:
 			info.merge({icon = "observe", verb = "OBSERVE", hold = true}, true)
 		else:
 			info.merge({icon = "work", verb = "FIX", hold = true}, true)
@@ -320,6 +348,9 @@ func action_info() -> Dictionary:
 				info.merge({icon = "downlink", verb = verb, hold = true, enabled = in_view and tx_on}, true)
 			"scientist":
 				info.merge({icon = "observe", verb = "NO TARGET", enabled = false}, true)
+			"team":
+				var has_plan: bool = not _state.get("forecast", []).is_empty()
+				info.merge({icon = "holo" if has_plan else "use", verb = "PLAN" if has_plan else label_text, enabled = has_plan}, true)
 			_:
 				info.merge({verb = label_text, enabled = false}, true)
 	return info
@@ -358,6 +389,8 @@ func _draw_bubble() -> void:
 	if ticket.is_empty() and role == "comms":  # DSN pass: the ring runs out with the pass
 		var pass_left: float = _state.get("dsn", {}).get("time_left", 0.0)
 		ticket = {time_left = pass_left, duration = maxf(pass_left, 9.0)}
+	elif ticket.is_empty() and role == "team":  # plan ahead: no countdown
+		ticket = {time_left = -1.0, duration = -1.0}
 	elif ticket.is_empty():  # alert from the dust stream: show its countdown instead
 		var total: float = _dust.get("time_left", 0.0)
 		ticket = {time_left = total, duration = maxf(total, 12.0)}
@@ -390,10 +423,10 @@ func _panel_lines() -> Array[String]:
 	elif _ticket.get("kind", "") == "shields":
 		lines.append("RADIATION STORM IN %ds" % ceili(_ticket.time_left))
 		lines.append("SPACE: RAISE SHIELDS")
-	elif _ticket.get("kind", "") == "science_window" and not _state.get("loads", {}).get("instruments", false):
+	elif _ticket.get("kind", "") in ["science_window", "flyby"] and not _state.get("loads", {}).get("instruments", false):
 		lines.append(_ticket.title.to_upper())
 		lines.append("INSTRUMENTS OFF - ENGINEER!")
-	elif _ticket.get("kind", "") == "science_window" and float(_state.get("data", 0)) > 95.0:
+	elif _ticket.get("kind", "") in ["science_window", "flyby"] and float(_state.get("data", 0)) > 95.0:
 		lines.append("STORAGE FULL - IT'D BE LOST")
 		lines.append("HOLD SPACE: OBSERVE ANYWAY")
 	elif _ticket.get("kind", "") == "safe_mode":
@@ -463,6 +496,12 @@ func _panel_lines() -> Array[String]:
 				else:
 					lines.append("NO TARGET")
 					lines.append("STORAGE %d%%" % int(_state.get("data", 0)))
+			"team":
+				if not _state.get("forecast", []).is_empty():
+					lines.append("FLIGHT PLAN")
+					lines.append("SPACE: OPEN" + (" - PLAN AHEAD!" if _plan_alert() else ""))
+				else:
+					lines.append(label_text)
 			_:
 				lines.append(label_text)
 	return lines
