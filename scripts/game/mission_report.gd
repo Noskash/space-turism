@@ -267,6 +267,7 @@ func _draw_result(box: Rect2, accent: Color, k: float) -> void:
 	var header := "MISSION %d REPORT  ·  %s" % [int(m.get("number", 0)), str(m.get("title", ""))]
 	if Missions.current_id() == Missions.SANDBOX:
 		header = "SANDBOX REPORT  ·  FREE PLAY"
+	header += "  ·  " + str(Missions.difficulty().get("name", ""))
 	_text(header, Vector2(x, box.position.y + 13), 8, Color(accent, k))
 	var head: String = {orbit = "ORBIT ACHIEVED", flyby = "FLYBY - NO ORBIT", miss = "MISSED MARS"}.get(str(f.outcome), "")
 	var head_col := Color("8cffb0") if f.outcome == "orbit" else (Color("ffc640") if f.outcome == "flyby" else Color("ff5050"))
@@ -288,6 +289,9 @@ func _draw_result(box: Rect2, accent: Color, k: float) -> void:
 		var parts := ("STARS %d + DATA SENT %d + HEALTHY CREW %d + ORBIT %d" if sandbox else "STARS %d + BONUS DATA %d + HEALTHY CREW %d + ORBIT %d") % [stars * Missions.STAR_POINTS,
 				int(f.get("bonus", 0)) * Missions.BONUS_POINTS, int(f.get("healthy", 0)) * Missions.HEALTHY_POINTS,
 				int(f.get("orbit_science", 0)) * Orbits.ORBIT_POINTS]
+		var mult := float(Missions.difficulty().get("score", 1.0))
+		if mult != 1.0:
+			parts = "(%s)  x%s %s" % [parts, String.num(mult), str(Missions.difficulty().get("name", ""))]
 		# own line under the stars (it used to sit beside them and overlap at bigger TEXT SIZE)
 		_text(parts, Vector2(right - UiFont.width(parts, 6), box.position.y + 69 + _grow(4)), 6, Color(0.6, 0.65, 0.8, k))
 		var best := "NEW BEST!" if _new_best else "BEST %d" % _best

@@ -121,8 +121,8 @@ over also return here). The menu Designer (`designer.tscn` → `planner.tscn`) s
   astronaut of your crew role (name + bio from `astronauts.json`; role-bound because the cruise dose bars + report key on
   it). A/D or arrows / click browse, SPACE / click = wear + close, Q closes. Look texts + captions: `data/characters.json`.
   Picking sets `_local.skin` (synced via the crew snapshot) and saves it to `user://character.cfg`
-  (`CharacterSelect.saved_skin()`, applied at hangar spawn). The K skin-cycle key is gone from the hangar (still in the
-  cruise). Not yet: the cruise (`game.gd`) still assigns skins by player index, so the pick does not carry into flight.
+  (`CharacterSelect.saved_skin()`, applied at hangar spawn and in the cruise, `game.gd`). The K skin-cycle key is gone
+  from the hangar (still in the cruise).
 - New key: F = `inspect` (Controls). Tutorial id "hangar" (7 panes); MissionBriefing first, as in the designer.
 - TEXT SIZE: board numbers are painted into fixed map boxes (`SIGN_PX` 6, ignore the setting); the F card is laid
   out from rows (`_card_rows`) so it grows with the text; prompts sit on a dark plate. The planner (both modes) caps
@@ -285,6 +285,16 @@ lobby → designer (**MissionBriefing** first, once per mission) → launch → 
   ALL data sent (`bonus_data` with no SENT goal) + orbit + healthy crew.
 - `Missions.current_id()` in a room now always returns the room's mission (was: fell back to a stale `offline_id` when "").
   The old mission id "" (endless cruise, every hazard) still exists for tests.
+
+## Difficulty (built 2026-11-18)
+- EASY / MEDIUM / HARD buttons in the mission picker's title row (Q/E or click; also applies to the sandbox) ->
+  `Missions.offline_difficulty` -> `LevelData.difficulty` (room info, synced). `Missions.difficulty()` reads
+  `missions.json` `difficulty` (unknown id -> medium). Lobby card + report header show it.
+- Multipliers (medium = the tuned x1): `pace` (ticket timers, hazard gaps, cruise length), `ticket_gap`, `warn` (storm +
+  debris warning), `hazard` (meteoroid / breach / leak / fire-on-hit odds, O2 drain, bus heat), `tasks` (+-1 shield charge /
+  safe-mode breaker, breakers capped at 5), `score` (x0.75 / x1 / x1.5 on the final score; best score is not per difficulty).
+- Build fingerprint (`Network.build_version`) now also hashes every `.gd` + data JSON; needs `script_export_mode=0` (text)
+  in both presets.
 
 ## Mars orbit choice (built 2026-11-15) — NASA brief: "several orbital options and explain them"
 - Designer SHIP column row "Orbit: X" (shared, SPACE cycles, un-readies everyone) -> `design.orbit`

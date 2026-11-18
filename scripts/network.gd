@@ -85,7 +85,7 @@ func _ready() -> void:
 		if arg.begins_with("--relay="):
 			relay_url = arg.trim_prefix("--relay=")
 	# In the console / browser log, so host and friend can compare builds without opening the lobby.
-	(func() -> void: print("Space Tourism build ", build_version())).call_deferred()
+	(func() -> void: print("Space Tourism build ", build_version(), " (", _hashed, " files)")).call_deferred()
 
 
 func is_host() -> bool:
@@ -251,6 +251,7 @@ const RPC_SCRIPTS := [
 ]
 const VERSION_MISMATCH := "Your game is a different version from the host's. Reload the page (or use the same build as the host) and join again."
 var _version := ""
+var _hashed := 0   # files in the fingerprint (printed at startup: a missing file in one export shows here)
 
 
 func build_version() -> String:
@@ -266,8 +267,26 @@ func build_version() -> String:
 				lines.append("%s:%s:%s" % [path.get_file(), str(k), str(cfg[k])])
 			lines.sort()
 			parts.append_array(lines)
+		# Plus every script and data file, so builds with different code or numbers (web vs desktop) don't mix.
+		# Needs script_export_mode = text in export_presets.cfg (binary tokens ship no .gd text to hash).
+		var files := PackedStringArray()
+		_collect("res://scripts", ".gd", files)
+		for dir in ["res://data", "res://sprites"]:
+			_collect(dir, ".json", files)
+		files.sort()
+		_hashed = files.size()
+		for path in files:
+			parts.append(path + ":" + FileAccess.get_file_as_string(path).replace("\r", "").md5_text())
 		_version = "|".join(parts).md5_text().substr(0, 8)
 	return _version
+
+
+static func _collect(dir: String, ext: String, out: PackedStringArray) -> void:
+	for sub in DirAccess.get_directories_at(dir):
+		_collect(dir.path_join(sub), ext, out)
+	for f in DirAccess.get_files_at(dir):
+		if f.ends_with(ext):
+			out.append(dir.path_join(f))
 
 
 # --- Network events ---

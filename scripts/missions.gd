@@ -16,6 +16,7 @@ const SANDBOX := "sandbox"         # missions.json "sandbox": double budget, no 
 
 static var offline_id := ""
 static var offline_options := {storms = true, debris = true, hull = false, conjunction = true}
+static var offline_difficulty := "medium"
 static var _data := {}
 
 
@@ -66,6 +67,21 @@ static func sim() -> Dictionary:
 	if not bool(o.get("conjunction", true)):
 		s.conjunction_at = -1
 	return s
+
+
+## Difficulty id ("easy" / "medium" / "hard"): the room's (synced with the room info), else the picker's.
+static func difficulty_id() -> String:
+	var id := Network.level.difficulty if Network.is_in_room() and Network.level else offline_difficulty
+	return id if data().get("difficulty", {}).has(id) else "medium"
+
+
+## {name, pace, ticket_gap, warn, hazard, tasks, score} (missions.json "difficulty"); medium = all x1.
+static func difficulty() -> Dictionary:
+	return data().get("difficulty", {}).get(difficulty_id(), {})
+
+
+static func difficulty_order() -> Array:
+	return data().get("difficulty_order", ["medium"])
 
 
 static func sandbox_options() -> Dictionary:
@@ -150,8 +166,9 @@ static func bonus_data(state: Dictionary) -> int:
 static func score(state: Dictionary) -> int:
 	if str(state.get("lost", "")) != "":
 		return 0
-	return stars(state) * STAR_POINTS + bonus_data(state) * BONUS_POINTS + healthy_crew(state) * HEALTHY_POINTS \
+	var points := stars(state) * STAR_POINTS + bonus_data(state) * BONUS_POINTS + healthy_crew(state) * HEALTHY_POINTS \
 			+ Orbits.points(state)   # science sent home from Mars orbit after the brake burn (0 unless in orbit)
+	return roundi(points * float(difficulty().get("score", 1.0)))
 
 
 ## Astronauts without radiation sickness (state.crew from the sim).

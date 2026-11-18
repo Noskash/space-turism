@@ -105,6 +105,10 @@ const TICKET_PACE := [1.6, 1.6, 1.3, 1.15, 1.0]
 const TICKET_GAP := Vector2(6.0, 10.0)
 var _pace := 1.0
 var _ticket_pace := 1.0
+# Difficulty (missions.json "difficulty", picked before the mission): warning time, hazard odds/rates, minigame tasks.
+var _warn := 1.0
+var _hazard := 1.0
+var _tasks := 0
 var _big_storm_done := false
 
 # --- astronauts (data/astronauts.json): radiation dose per crew member + the Cargo storm shelter ---
@@ -246,8 +250,12 @@ func start(design: Dictionary) -> void:
 	var mission := Missions.current()
 	_sim = Missions.sim()   # the mission's block (+ the sandbox's hazard switches)
 	var crew := clampi(crew_size, 0, PACE.size() - 1)
-	_pace = PACE[crew]
-	_ticket_pace = TICKET_PACE[crew]
+	var diff := Missions.difficulty()
+	_pace = PACE[crew] * float(diff.get("pace", 1.0))
+	_ticket_pace = TICKET_PACE[crew] * float(diff.get("ticket_gap", 1.0))
+	_warn = float(diff.get("warn", 1.0))
+	_hazard = float(diff.get("hazard", 1.0))
+	_tasks = int(diff.get("tasks", 0))
 	var cruise_days := float(mission.get("cruise_days", 0.0))
 	var cruise_seconds := float(mission.get("cruise_seconds", 150.0))
 	var trip := LaunchWindow.trip_days(design)   # launch window planner: STANDARD 259 d / FAST 180 d
@@ -563,8 +571,8 @@ func _start_cme() -> void:
 			and state.day >= state.cruise_days * big_at
 	_big_storm_done = _big_storm_done or big
 	var shielding: bool = params.shields
-	var warn: float = CME_WARN + float(params.cme_warning) + (BIG_STORM_EXTRA_WARN if big else 0.0) \
-			+ (0.0 if shielding else SHELTER_EXTRA_WARN)
+	var warn: float = (CME_WARN + float(params.cme_warning) + (BIG_STORM_EXTRA_WARN if big else 0.0) \
+			+ (0.0 if shielding else SHELTER_EXTRA_WARN)) * _warn
 	state.cme = {phase = "warning", time_left = warn, duration = warn, shields = false, safe = false,
 			shielding = shielding, big = big}
 	state.stats.storms = int(state.stats.storms) + 1
@@ -572,11 +580,11 @@ func _start_cme() -> void:
 	var what := "HALLOWEEN-CLASS STORM" if big else "SOLAR RADIATION STORM"
 	if shielding:   # radiation shielding bought: anyone raises it at the Mission Hub (ShieldGame)
 		e.merge({kind = "shields", role = "team", title = "Raise the shields", work_time = 0.0,
-				charges = maxi(SHIELD_CHARGES + int(params.cme_tasks), 1) + (1 if big else 0)})
+				charges = maxi(SHIELD_CHARGES + int(params.cme_tasks) + _tasks, 1) + (1 if big else 0)})
 		_say("%s IN %ds - RAISE THE SHIELDS!" % [what, int(warn)])
 	else:           # no shielding: the Engineer powers the ship down (hold-to-work ticket)
 		e.merge({kind = "safe_mode", role = "engineer", title = "Enter safe mode", work_time = 0.0,
-				breakers = maxi(SAFE_MODE_BREAKERS + int(params.cme_tasks), 2) + (1 if big else 0)})
+				breakers = mini(maxi(SAFE_MODE_BREAKERS + int(params.cme_tasks) + _tasks, 2) + (1 if big else 0), 5)})   # SafeModeGame has 5
 		_say("%s IN %ds - ENGINEER: SAFE MODE! EVERYONE: TO CARGO!" % [what, int(warn)])
 	_next_id += 1
 	state.events.append(e)
@@ -623,7 +631,7 @@ func _cme_hits() -> void:
 			others.erase("scientist")
 		_knock_offline(others[_rng.randi() % others.size()], "Radiation damage")
 		_say(("STORM RECORDED - " if recorded else "") + "SHIELDS DOWN! SHIP DISABLED - BLACKOUT" + _outside_text(outside))
-		if _rng.randf() < METEOR_CHANCE:   # dead in space, nobody can steer
+		if _rng.randf() < METEOR_CHANCE * _hazard:   # dead in space, nobody can steer
 			state.meteor.time_left = _rng.randf_range(METEOR_SHOW + 0.5, BLACKOUT_TIME - 1.5)
 			state.meteor.y = _rng.randf_range(40.0, 230.0)
 	_emit()
@@ -679,7 +687,7 @@ func _tick_dust(dt: float) -> void:
 ## Comet debris on the radar (`comet` = the trail's name from the forecast, "" = unnamed).
 func _start_dust(comet: String) -> void:
 	_introduce("debris")
-	var warn: float = DUST_WARN + float(params.dust_warning)
+	var warn: float = (DUST_WARN + float(params.dust_warning)) * _warn
 	# What the minigame gets from the design (sent in the state, so clients know too).
 	var side := 1.0 if _rng.randf() < 0.5 else -1.0
 	state.dust = {phase = "warning", time_left = warn, duration = warn, hits = 0,
@@ -748,14 +756,14 @@ func _end_dust(hits: int, thrust: float, turning: float) -> void:
 ## No breach = the old damage (a station knocked out, a dented tank, or just a dent). Returns breached.
 func _impact(force: float, extra_breach: float, title: String) -> bool:
 	state.hull = maxf(state.hull - params.hull_hit * force, 0.0)
-	var chance: float = (BREACH_BASE + BREACH_WORN * (1.0 - state.hull / 100.0) + extra_breach) * params.breach_mult
+	var chance: float = (BREACH_BASE + BREACH_WORN * (1.0 - state.hull / 100.0) + extra_breach) * params.breach_mult * _hazard
 	# Missions without the hull system (mission "hull": false) never breach: hits do the old damage.
 	if _on("hull") and state.breaches.size() < MAX_BREACHES and _rng.randf() < clampf(chance, 0.05, 0.95):
 		_open_breach()
 		return true
 	if _on("eva") and _rng.randf() < EVA_ON_HIT and _open_eva_fault("", title.to_lower()):
 		return false   # the hit damaged something on the outside: a spacewalk job
-	if _on("fire") and _rng.randf() < FIRE_ON_HIT:
+	if _on("fire") and _rng.randf() < FIRE_ON_HIT * _hazard:
 		_start_fire("", title.to_lower() + " sparked it")
 		return false
 	var roll := _rng.randf()
@@ -763,7 +771,7 @@ func _impact(force: float, extra_breach: float, title: String) -> bool:
 		var roles := ["engineer", "comms", "scientist", "navigator"].filter(func(r: String) -> bool: return r not in state.offline)
 		if not roles.is_empty():
 			_knock_offline(roles[_rng.randi() % roles.size()], title)
-	elif roll < 0.5 + LEAK_CHANCE and _open_leak():
+	elif roll < 0.5 + LEAK_CHANCE * _hazard and _open_leak():
 		pass   # cascade: leak -> fuel drains -> maybe not enough for the brake burn at Mars
 	elif roll < 0.85:
 		state.fuel = maxf(state.fuel - 8.0, 0.0)
@@ -819,7 +827,7 @@ func _tick_oxygen(dt: float) -> void:
 	var open: int = state.breaches.size()
 	var flames: int = state.fires.size() if _on("fire") else 0
 	if open > 0 or flames > 0:
-		state.oxygen = maxf(state.oxygen - (O2_DRAIN * open + FIRE_O2 * flames) * dt, 0.0)
+		state.oxygen = maxf(state.oxygen - (O2_DRAIN * open + FIRE_O2 * flames) * _hazard * dt, 0.0)
 		if state.oxygen <= 0.0:
 			state.lost = "OXYGEN RAN OUT - " + ("the hull breaches were not sealed in time" if open > 0
 					else "the fire burned up the cabin air")
@@ -1027,7 +1035,7 @@ func _tick_heat(dt: float) -> void:
 		deficit = 0.0   # everything is off anyway
 	var heat: float = state.bus_heat
 	if deficit > 0.0:
-		heat += 100.0 / HEAT_TIME * clampf(deficit / 40.0, 0.5, 2.0) * dt
+		heat += 100.0 / HEAT_TIME * clampf(deficit / 40.0, 0.5, 2.0) * _hazard * dt
 	else:
 		heat = maxf(heat - HEAT_COOL * dt, 0.0)
 	if heat >= HEAT_WARN and not _heat_warned:

@@ -26,6 +26,10 @@ const SANDBOX_HINTS := {
 const SANDBOX_ROW_Y := 66.0      # first toggle row, from the panel top
 const SANDBOX_ROW_H := 16.0
 const BACK_RECT := Rect2(418, 8, 54, 20)
+# Difficulty buttons (Missions.difficulty_order) in the title row, left of BACK. Q/E or click.
+const DIFF_W := 50.0
+const DIFF_GAP := 3.0
+const DIFF_COLORS := {easy = UiKit.GOOD, medium = UiKit.WARN, hard = UiKit.BAD}
 # Goal kinds -> chip text + icon; threats from the mission's sim flags.
 const THREATS := [["storms", "STORMS", "power"], ["debris", "DEBRIS", "debris"], ["hull", "HULL", "hull"]]
 
@@ -96,6 +100,10 @@ func _unhandled_input(event: InputEvent) -> void:
 					_pick()
 			KEY_ENTER, KEY_KP_ENTER:
 				_pick()
+			KEY_Q:
+				_step_difficulty(-1)
+			KEY_E:
+				_step_difficulty(1)
 			KEY_ESCAPE:
 				_back()
 	elif event is InputEventMouseMotion:
@@ -112,6 +120,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		var mouse := get_local_mouse_position()
 		if BACK_RECT.has_point(mouse):
 			_back()
+			return
+		var diff := _difficulty_at(mouse)
+		if diff != "":
+			_set_difficulty(diff)
 			return
 		var hit := _panel_at(mouse)
 		if hit >= 0:
@@ -157,6 +169,34 @@ func _toggle(key: String) -> void:
 	Sfx.play("toggle")
 
 
+func _step_difficulty(step: int) -> void:
+	var ids := Missions.difficulty_order()
+	var i := clampi(ids.find(Missions.difficulty_id()) + step, 0, ids.size() - 1)
+	_set_difficulty(ids[i])
+
+
+func _set_difficulty(id: String) -> void:
+	if id == Missions.offline_difficulty:
+		return
+	Missions.offline_difficulty = id
+	_juice.kick("diff", 0.3)
+	Sfx.play("toggle")
+
+
+func _difficulty_rect(i: int) -> Rect2:
+	var n := Missions.difficulty_order().size()
+	var x0 := BACK_RECT.position.x - 6.0 - n * DIFF_W - (n - 1) * DIFF_GAP
+	return Rect2(x0 + i * (DIFF_W + DIFF_GAP), BACK_RECT.position.y, DIFF_W, BACK_RECT.size.y)
+
+
+func _difficulty_at(p: Vector2) -> String:
+	var ids := Missions.difficulty_order()
+	for i in ids.size():
+		if _difficulty_rect(i).has_point(p):
+			return ids[i]
+	return ""
+
+
 func _sandbox_row_rect(i: int) -> Rect2:
 	var r := _panel_rect(_ids.find(Missions.SANDBOX))
 	if i == SANDBOX_KEYS.size():   # FLY button
@@ -181,6 +221,7 @@ func _pick() -> void:
 	var data: LevelData = level.duplicate() if level else LevelData.new()
 	data.mission = id
 	data.options = Missions.offline_options.duplicate() if id == Missions.SANDBOX else {}
+	data.difficulty = Missions.offline_difficulty
 	data.title = str(m.title).capitalize()   # the card shows "MARS · MISSION n" above it
 	data.description = str(m.tagline)
 	if data.scene == "":
@@ -222,15 +263,22 @@ func _draw() -> void:
 	MenuKit.stars(self, _stars, _time)
 	MenuKit.title(self, Vector2(8, 6), "MARS CAMPAIGN", "3 REAL NASA MISSIONS FLOWN BY YOUR CREW - OR A SANDBOX", ACCENT, "fly")
 	MenuKit.button(self, BACK_RECT, "BACK", UiKit.DIM.lightened(0.3), _back_hot, true, 8)
+	var diffs := Missions.difficulty_order()
+	for i in diffs.size():
+		var id: String = diffs[i]
+		var on := id == Missions.difficulty_id()
+		var label := str(Missions.data().difficulty[id].get("name", id.to_upper()))
+		MenuKit.button(self, _difficulty_rect(i), label, DIFF_COLORS.get(id, UiKit.DIM), on, true, 7, "",
+				_juice.pop("diff") if on else 0.0)
 	for i in _ids.size():
 		if i == _index:
 			continue
 		_draw_card(i)
 	_draw_card(_index)   # selected last: its frame and arrow sit on top
 	_draw_info()
-	var keys := [["A/D", "CHOOSE"], ["SPACE", "FLY THIS MISSION"], ["ESC", "BACK"]]
+	var keys := [["A/D", "CHOOSE"], ["Q/E", "DIFFICULTY"], ["SPACE", "FLY THIS MISSION"], ["ESC", "BACK"]]
 	if _on_sandbox():
-		keys = [["A/D", "CHOOSE"], ["W/S", "HAZARD"], ["SPACE", "SWITCH"], ["ENTER", "FLY"], ["ESC", "BACK"]]
+		keys = [["A/D", "CHOOSE"], ["Q/E", "DIFFICULTY"], ["W/S", "HAZARD"], ["SPACE", "SWITCH"], ["ENTER", "FLY"], ["ESC", "BACK"]]
 	MenuKit.key_hints(self, 240, 252, keys, 6)
 	if _message != "" and _message_t > 0.0:
 		MenuKit.toast(self, 240 + _juice.shake("deny").x, 246, _message, UiKit.BAD, clampf(_message_t * 4.0, 0.0, 1.0))

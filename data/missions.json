@@ -1,6 +1,13 @@
 {
   "_comment": "Mars campaign. Each mission = a real NASA robotic mission flown as a future crewed one (framing A). Read by scripts/missions.gd; fake_mission reads the 'sim' block. Numbers are first guesses (SIMPLIFIED), facts on screen are checked against NASA sources.",
   "order": ["odyssey", "mro", "maven"],
+  "_difficulty": "Picked on the mission picker, synced with the room (LevelData.difficulty). medium = the tuned numbers. pace: ticket timers, storm/debris/EVA gaps and cruise length (x crew pace); ticket_gap: gap between random tickets; warn: storm + debris warning time; hazard: meteoroid / breach / leak / fire-on-hit chances, O2 drain, bus heat; tasks: extra shield charges + safe-mode breakers; score: final score.",
+  "difficulty_order": ["easy", "medium", "hard"],
+  "difficulty": {
+    "easy": {"name": "EASY", "pace": 1.3, "ticket_gap": 1.3, "warn": 1.4, "hazard": 0.6, "tasks": -1, "score": 0.75},
+    "medium": {"name": "MEDIUM", "pace": 1.0, "ticket_gap": 1.0, "warn": 1.0, "hazard": 1.0, "tasks": 0, "score": 1.0},
+    "hard": {"name": "HARD", "pace": 0.8, "ticket_gap": 0.8, "warn": 0.75, "hazard": 1.4, "tasks": 1, "score": 1.5}
+  },
   "missions": {
     "odyssey": {
       "number": 1,

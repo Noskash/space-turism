@@ -18,6 +18,8 @@ extends Resource
 @export var mission: String = ""
 ## Sandbox hazard switches {storms, debris, hull, conjunction} (Missions.sim). Synced with the room.
 @export var options: Dictionary = {}
+## "easy" / "medium" / "hard" (missions.json "difficulty"), set by the mission picker. Synced with the room.
+@export var difficulty: String = "medium"
 
 @export_group("Planet on the card")
 @export var planet_color_a: Color = Color(0.3, 0.3, 0.32)
@@ -45,6 +47,7 @@ func to_dict() -> Dictionary:
 		"available": available,
 		"mission": mission,
 		"options": options,
+		"difficulty": difficulty,
 	}
 
 
@@ -64,4 +67,5 @@ static func from_dict(data: Dictionary) -> LevelData:
 	level.mission = str(data.get("mission", ""))
 	var opts: Variant = data.get("options", {})
 	level.options = opts if opts is Dictionary else {}
+	level.difficulty = str(data.get("difficulty", "medium"))
 	return level

@@ -311,8 +311,13 @@ func _draw_card(c: Control) -> void:
 	c.draw_rect(strip, accent.darkened(0.55))
 	c.draw_rect(Rect2(strip.position.x, strip.end.y, strip.size.x, 1), UiKit.INK)
 	UiKit.text(c, Vector2(strip.position.x + 3, strip.end.y - 3), head, 7, accent, 0)
+	var right := strip.end.x - 3
+	if level.has_missions or level.mission != "":   # difficulty (synced with the room), right of the year
+		var diff := str(Missions.difficulty().get("name", ""))
+		UiKit.text_r(c, right, strip.end.y - 3, diff, 7, MissionSelect.DIFF_COLORS.get(Missions.difficulty_id(), UiKit.TEXT), 0)
+		right -= UiFont.width(diff, 7) + 5
 	if year != "":
-		UiKit.text_r(c, strip.end.x - 3, strip.end.y - 3, year, 7, UiKit.TEXT, 0)
+		UiKit.text_r(c, right, strip.end.y - 3, year, 7, UiKit.TEXT, 0)
 	# Planet with a little ship on a dotted orbit.
 	var center := Vector2(roundf(CARD.get_center().x), CARD.position.y + 44)
 	var radius := 18
